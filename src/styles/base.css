@@ -1,0 +1,11 @@
+/* 全域基礎樣式（所有入口共用）；各入口樣式另以 .portal-<name> 限定範圍 */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { font-family: 'Inter', 'Noto Sans TC', sans-serif; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #CDD2E0; border-radius: 3px; }
+
+/* 圖示：<i class="ti"><svg/></i>，SVG 以 1em 跟隨 font-size、以 currentColor 跟隨文字色
+   :where() 讓各入口既有規則（如 .empty i { display:block }）優先 */
+:where(i.ti) { font-style: normal; line-height: 1; display: inline-flex; vertical-align: -0.125em; }
+i.ti > svg { width: 1em; height: 1em; display: inline-block; vertical-align: top; }

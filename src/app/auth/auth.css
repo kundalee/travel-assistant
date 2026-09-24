@@ -1,0 +1,97 @@
+/* 共用登入 / 註冊視窗；各入口僅色彩不同（data-portal） */
+.auth-root {
+  --surface: #fff;
+  --bg: #F3F5F8;
+  --border: #E3E7EE;
+  --border2: #CBD2DD;
+  --text: #16192C;
+  --muted: #5A6072;
+  --light: #8E94A6;
+  --danger: #B91C1C; --danger-l: #FEF2F2;
+  --ok: #157347; --ok-l: #E7F4EC;
+  --info: #0E7490; --info-l: #E4F5FA;
+  --radius: 11px;
+  --accent: #4338CA; --accent-mid: #4F46E5; --accent-hover: #372FA6; --accent-light: #EEF0FE; --from: #2A2568;
+
+  position: fixed; inset: 0; z-index: 1000; overflow: auto; padding: 1.2rem;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, var(--from), var(--accent) 55%, var(--accent-mid));
+  color: var(--text); font-size: 15px; line-height: 1.6;
+
+  &[data-portal="guide"] { --accent: #1E4E8C; --accent-mid: #2E6BB8; --accent-hover: #163C6E; --accent-light: #E7F0FA; --from: #12325C; }
+  &[data-portal="traveler"] { --accent: #17795E; --accent-mid: #1E9070; --accent-hover: #10604A; --accent-light: #E4F5EF; --from: #0F4D3B; }
+  &[data-portal="partner"] { --accent: #B45309; --accent-mid: #C2620F; --accent-hover: #99460A; --accent-light: #FDF3E7; --from: #6B3207; }
+
+  .am-card { width: 100%; max-width: 420px; margin: auto auto 0; background: var(--surface); border-radius: 22px;
+    box-shadow: 0 18px 46px rgba(22,25,44,0.22); padding: 2rem 1.6rem; animation: am-pop 0.2s ease; }
+  .am-brand { text-align: center; margin-bottom: 1.4rem; }
+  .am-logo { width: 60px; height: 60px; border-radius: 16px; margin-bottom: 12px; color: #fff; font-size: 30px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-mid)); display: inline-flex; align-items: center; justify-content: center; }
+  .am-brand h1 { font-family: 'Noto Sans TC', sans-serif; font-size: 1.4rem; font-weight: 700; }
+  .am-brand p { font-family: 'Playfair Display', serif; font-size: 12px; color: var(--light); letter-spacing: 0.5px; }
+
+  .am-tabs { display: flex; gap: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; margin-bottom: 1.2rem; }
+  .am-tabs button { flex: 1; padding: 9px; border: none; border-radius: 8px; background: transparent; font: inherit; font-size: 13.5px;
+    font-weight: 600; color: var(--muted); cursor: pointer; }
+  .am-tabs button.on { background: var(--surface); color: var(--accent); box-shadow: 0 1px 2px rgba(22,25,44,0.08); }
+
+  .am-field { margin-bottom: 0.95rem; }
+  .am-field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+  .am-field input { width: 100%; padding: 11px 13px; border: 1.5px solid var(--border); border-radius: var(--radius); font: inherit; font-size: 14.5px;
+    background: var(--surface); color: var(--text); }
+  .am-field input:focus { outline: none; border-color: var(--accent-mid); box-shadow: 0 0 0 3px var(--accent-light); }
+  .am-two { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+  .am-req { color: var(--danger); }
+  .am-row { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 16px; font-size: 13px; }
+  .am-check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .am-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .am-terms { align-items: flex-start; margin: 0.25rem 0 1.1rem; }
+  .am-terms input { margin-top: 3px; }
+  .am-link { background: none; border: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .am-link:hover { text-decoration: underline; }
+
+  .am-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border-radius: 999px;
+    border: 1px solid transparent; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.18s ease; }
+  .am-btn.primary { background: var(--accent); color: #fff; }
+  .am-btn.primary:hover { background: var(--accent-hover); }
+  .am-btn.primary:disabled { opacity: 0.6; cursor: wait; }
+  .am-btn.ghost { background: var(--surface); border-color: var(--border2); color: var(--text); }
+  .am-btn.ghost:hover { background: var(--bg); }
+  .am-btn.block { width: 100%; }
+  .am-btn.social { font-size: 14px; padding: 10px; border-radius: var(--radius); }
+  .am-btn.social.g i { color: #DB4437; }
+  .am-btn.social.f i { color: #1877F2; }
+
+  .am-alert { display: flex; align-items: flex-start; gap: 8px; padding: 11px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 1rem; }
+  .am-alert.err { background: var(--danger-l); color: var(--danger); }
+  .am-alert.ok { background: var(--ok-l); color: var(--ok); }
+  .am-alert.info { background: var(--info-l); color: var(--info); }
+  .am-alert i { margin-top: 2px; }
+
+  .am-demo, .am-note { margin-top: 1.1rem; padding: 11px 14px; border-radius: var(--radius); display: flex; gap: 9px; align-items: flex-start;
+    font-size: 12.5px; color: var(--muted); line-height: 1.6; background: var(--accent-light); }
+  .am-demo > i { color: var(--accent); font-size: 18px; margin-top: 1px; }
+  .am-demo > div { flex: 1; }
+  .am-demo b { color: var(--accent); }
+  .am-demo b { display: block; }
+  .am-demo button { display: block; margin-top: 7px; padding: 6px 13px; border: none; border-radius: 99px;
+    background: var(--accent); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .am-note { background: var(--info-l); }
+  .am-note > i { color: var(--info); font-size: 18px; margin-top: 1px; }
+  .am-note b { color: var(--text); }
+
+  .am-divider { display: flex; align-items: center; gap: 12px; margin: 1.2rem 0; color: var(--light); font-size: 12.5px; }
+  .am-divider::before, .am-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .am-portals p { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .am-portals .am-btn { margin-bottom: 8px; }
+  .am-foot { margin: 1.1rem auto auto; font-size: 11.5px; color: rgba(255,255,255,0.75); }
+
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(160%); background: var(--text); color: #fff;
+    padding: 12px 20px; border-radius: 999px; font-size: 13.5px; z-index: 1100; opacity: 0; visibility: hidden; pointer-events: none;
+    transition: transform 0.3s ease, opacity 0.25s ease; display: flex; align-items: center; gap: 8px; max-width: 90vw; }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; }
+
+  @media (max-width: 420px) { .am-two { grid-template-columns: 1fr; } }
+}
+
+@keyframes am-pop { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: none; } }
