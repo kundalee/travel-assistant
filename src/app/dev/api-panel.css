@@ -1,0 +1,51 @@
+/* 開發用 API 面板（僅假後端模式顯示） */
+.api-fab {
+  position: fixed; left: 12px; bottom: 12px; z-index: 3000;
+  padding: 7px 12px; border: none; border-radius: 99px; cursor: pointer;
+  background: #16192C; color: #CBD2DD; font: 600 12px/1 'Inter', sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+.api-fab b { color: #fff; }
+
+.api-panel {
+  position: fixed; left: 12px; bottom: 12px; z-index: 3000;
+  width: min(480px, calc(100vw - 24px)); max-height: min(640px, calc(100dvh - 24px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #fff; color: #16192C; border-radius: 14px; box-shadow: 0 18px 46px rgba(0,0,0,0.3);
+  font: 13px/1.5 'Inter', 'Noto Sans TC', sans-serif;
+
+  .ap-head { display: flex; justify-content: space-between; gap: 8px; padding: 14px 16px 10px; background: #16192C; color: #fff; }
+  .ap-head h3 { font-size: 15px; font-weight: 700; }
+  .ap-head p { font-size: 12px; color: #CBD2DD; }
+  .ap-x { width: 28px; height: 28px; border: none; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; cursor: pointer; font-size: 15px;
+    display: flex; align-items: center; justify-content: center; }
+
+  .ap-tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid #E3E7EE; }
+  .ap-tabs button { border: 1px solid #E3E7EE; background: #fff; border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; color: #5A6072; }
+  .ap-tabs button.on { background: #16192C; color: #fff; border-color: #16192C; }
+  .ap-spacer { flex: 1; }
+
+  .ap-body { overflow-y: auto; padding: 6px 0 10px; }
+  .ap-group-title { display: flex; align-items: baseline; gap: 8px; padding: 10px 16px 4px; font-size: 12px; font-weight: 700; color: #16192C; }
+  .ap-summary { font-size: 11px; font-weight: 600; color: #8E94A6; }
+  .ap-hit { margin-left: auto; font-size: 11px; color: #8E94A6; }
+  .ap-mode { flex-shrink: 0; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 99px; }
+  .ap-mode.fake { background: #FDF3E7; color: #B45309; }
+  .ap-mode.real { background: #E7F4EC; color: #157347; }
+  .ap-crud { flex-shrink: 0; width: 18px; height: 18px; border-radius: 5px; font-size: 10.5px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; background: #F3F5F8; color: #5A6072; }
+  .ap-crud.c-C { background: #E7F4EC; color: #157347; } .ap-crud.c-R { background: #E4F5FA; color: #0E7490; }
+  .ap-crud.c-U { background: #F1EBFE; color: #7C3AED; } .ap-crud.c-D { background: #FEF2F2; color: #B91C1C; }
+  .ap-crud.c-none { background: transparent; }
+  .ap-row { display: flex; align-items: center; gap: 10px; padding: 6px 16px; opacity: 0.45; }
+  .ap-row.hit { opacity: 1; }
+  .ap-method { flex-shrink: 0; width: 52px; text-align: center; font-size: 10.5px; font-weight: 700; padding: 2px 0; border-radius: 5px; color: #fff; }
+  .m-GET { background: #0E7490; } .m-POST { background: #157347; } .m-PUT { background: #B45309; }
+  .m-PATCH { background: #7C3AED; } .m-DELETE { background: #B91C1C; }
+  .ap-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .ap-main code { font: 12px/1.4 ui-monospace, Menlo, monospace; word-break: break-all; }
+  .ap-main span { font-size: 11.5px; color: #5A6072; }
+  .ap-count, .ap-status { flex-shrink: 0; min-width: 28px; text-align: right; font-weight: 700; }
+  .ap-status.err { color: #B91C1C; }
+  .ap-warn { margin: 6px 12px; padding: 8px 10px; border-radius: 8px; background: #FEF2F2; color: #B91C1C; font-size: 12px; }
+  .ap-empty { padding: 16px; color: #8E94A6; text-align: center; }
+}

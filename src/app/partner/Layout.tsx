@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Icon, type IconName } from '../../components'
-import { usePartner } from './store'
+import { useAuth } from '../auth/AuthProvider'
+import { useProfile } from './queries'
 
 /* path '' = 首頁（/partner） */
 const NAV: [path: string, icon: IconName, label: string][] = [
@@ -11,13 +12,14 @@ const NAV: [path: string, icon: IconName, label: string][] = [
 ]
 
 export default function Layout() {
-  const { user, ready, logout } = usePartner()
+  const { user, logout } = useAuth()
+  const profile = useProfile()
+  const name = profile.data?.name || user?.name || ''
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => { window.scrollTo({ top: 0 }) }, [pathname])
 
-  if (!ready || !user) return null
 
   const closeMenu = () => setMenuOpen(false)
   const navItem = ({ isActive }: { isActive: boolean }) => 'nav-item' + (isActive ? ' active' : '')
@@ -36,8 +38,8 @@ export default function Layout() {
         <div className="nav-links">
           {links()}
           <Link className="nav-user" to="/partner/profile">
-            <div className="avatar">{(user.profile.name || user.email || '店')[0]}</div>
-            <span className="name">{user.profile.name || '店家'}</span>
+            <div className="avatar">{(name || user?.email || '店')[0]}</div>
+            <span className="name">{name || '店家'}</span>
           </Link>
           <button className="nav-btn ghost" onClick={logout} aria-label="登出"><Icon name="logout" /></button>
         </div>

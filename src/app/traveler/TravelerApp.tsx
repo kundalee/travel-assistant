@@ -1,9 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTitle } from '../../lib/useTitle'
+import { ConfirmHost, Toaster } from '../../components'
 import PortalGate from '../auth/PortalGate'
 import './traveler.css'
 import Layout from './Layout'
-import { TravelerProvider } from './store'
+import { GbCartProvider } from './store'
 import Chat from './pages/Chat'
 import Explore, { TourDetail } from './pages/Explore'
 import { BoutiquePage, Epidemic, GroupBuy, History, Notices, Orders } from './pages/Extras'
@@ -18,7 +19,7 @@ export default function TravelerApp() {
   return (
     <PortalGate role="traveler">
       <div className="portal-traveler">
-        <TravelerProvider>
+        <GbCartProvider>
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<Home />} />
@@ -39,7 +40,9 @@ export default function TravelerApp() {
               <Route path="*" element={<Navigate to="/traveler" replace />} />
             </Route>
           </Routes>
-        </TravelerProvider>
+          <Toaster />
+          <ConfirmHost />
+        </GbCartProvider>
       </div>
     </PortalGate>
   )

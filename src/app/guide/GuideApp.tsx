@@ -1,9 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTitle } from '../../lib/useTitle'
+import { ConfirmHost, ModalStyle, Toaster } from '../../components'
 import PortalGate from '../auth/PortalGate'
 import './guide.css'
 import Layout from './Layout'
-import { GuideProvider } from './store'
 import { DealChat, TourChat } from './pages/Chat'
 import Deals from './pages/Deals'
 import Home from './pages/Home'
@@ -20,7 +20,8 @@ export default function GuideApp() {
   return (
     <PortalGate role="guide">
       <div className="portal-guide">
-        <GuideProvider>
+        {/* 領隊的表單與視窗一律置中顯示 */}
+        <ModalStyle center>
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<Home />} />
@@ -37,7 +38,9 @@ export default function GuideApp() {
               <Route path="*" element={<Navigate to="/guide" replace />} />
             </Route>
           </Routes>
-        </GuideProvider>
+          <Toaster />
+          <ConfirmHost />
+        </ModalStyle>
       </div>
     </PortalGate>
   )

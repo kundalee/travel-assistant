@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Field, Icon, Modal, PageHead, SearchBox, TableEmpty } from '../../../components'
+import { AsyncButton, Field, Icon, Modal, PageHead, QueryState, SearchBox, TableEmpty, toast } from '../../../components'
 import { DataNote } from '../components/DataNote'
 import { ROLE_TW } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { useAdminData, useCrud } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { Role, User } from '../../../api/types/admin'
-import { avatarUrl, includesQ, uid } from '../utils'
+import { avatarUrl, includesQ } from '../utils'
 
 const ROLES = Object.keys(ROLE_TW) as Role[]
 
@@ -23,15 +24,14 @@ function RolePicker({ value, onChange }: { value: Role[]; onChange: (r: Role[]) 
 }
 
 function UserModal({ user, onClose }: { user: User; onClose: () => void }) {
-  const { update, toast } = useAdmin()
+  const { update } = useCrud()
   const [name, setName] = useState(user.full_name || '')
   const [roles, setRoles] = useState<Role[]>(user.roles)
   const [phone, setPhone] = useState(user.phone || '')
 
-  function save() {
+  async function save() {
     if (!roles.length) return toast('請至少選擇一個身分', 'alert-circle')
-    onClose()
-    update('users', user.id, { full_name: name.trim(), roles, phone: phone.trim() }, '已更新使用者')
+    if (await update('users', user.id, { full_name: name.trim(), roles, phone: phone.trim() }, '已更新使用者')) onClose()
   }
 
   return (
@@ -40,24 +40,23 @@ function UserModal({ user, onClose }: { user: User; onClose: () => void }) {
       <Field label="信箱"><input value={user.email} disabled /></Field>
       <Field label="身分" hint="可複選"><RolePicker value={roles} onChange={setRoles} /></Field>
       <Field label="電話"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="選填" /></Field>
-      <button className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存</AsyncButton>
     </Modal>
   )
 }
 
 export function CreateUserModal({ onClose }: { onClose: () => void }) {
-  const { create, toast } = useAdmin()
+  const { create } = useCrud()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roles, setRoles] = useState<Role[]>(['guide'])
   const [phone, setPhone] = useState('')
 
-  function save() {
+  async function save() {
     if (!name.trim()) return toast('請輸入姓名', 'alert-circle')
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) return toast('請輸入有效的信箱', 'alert-circle')
     if (!roles.length) return toast('請至少選擇一個身分', 'alert-circle')
-    onClose()
-    create('users', { id: uid('u'), full_name: name.trim(), email: email.trim(), roles, phone: phone.trim(), status: 'on' }, '已建立使用者帳號', 'user-check')
+    if (await create('users', { full_name: name.trim(), email: email.trim(), roles, phone: phone.trim(), status: 'on' }, '已建立使用者帳號', 'user-check')) onClose()
   }
 
   return (
@@ -67,13 +66,17 @@ export function CreateUserModal({ onClose }: { onClose: () => void }) {
       <Field label="身分" hint="可複選"><RolePicker value={roles} onChange={setRoles} /></Field>
       <Field label="電話"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="選填" /></Field>
       <p className="hint" style={{ marginBottom: '0.9rem' }}>帳號建立後，初始密碼與通知信由後端寄送。</p>
-      <button className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="user-plus" />建立帳號</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="user-plus" />建立帳號</AsyncButton>
     </Modal>
   )
 }
 
 export default function Users() {
-  const { data } = useAdmin()
+  const { queries, data } = useAdminData('users')
+  return <QueryState queries={queries}>{() => <UsersView data={data!} />}</QueryState>
+}
+
+function UsersView({ data }: { data: Pick<AdminData, 'users'> }) {
   const [q, setQ] = useState('')
   const [role, setRole] = useState<Role | 'all'>('all')
   const [editing, setEditing] = useState<User | null>(null)

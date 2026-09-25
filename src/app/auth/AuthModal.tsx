@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authApi, DEMO_ACCOUNTS, type Role } from '../../api/auth'
+import { authApi, type Role } from '../../api/auth'
+import { DEMO_ACCOUNTS } from '../../api/mocks/auth'
 import { Icon, toast, Toaster } from '../../components'
 import { errMsg } from '../../lib/utils'
 import './auth.css'
@@ -28,6 +29,7 @@ function LoginForm({ role }: { role: Role }) {
   async function submit(e?: FormEvent, creds = { email, pw }) {
     e?.preventDefault()
     setErr(''); setOk('')
+    if (busy) return
     if (!creds.email || !creds.pw) return setErr('請輸入電子郵件與密碼。')
     setBusy(true)
     try {
@@ -69,7 +71,7 @@ function LoginForm({ role }: { role: Role }) {
             {demos.map((d) => (
               <div key={d.email}>
                 帳號　{d.email}<br />密碼　{d.password}
-                <button type="button" onClick={() => { setEmail(d.email); setPw(d.password); submit(undefined, { email: d.email, pw: d.password }) }}>
+                <button type="button" disabled={busy} onClick={() => { setEmail(d.email); setPw(d.password); submit(undefined, { email: d.email, pw: d.password }) }}>
                   一鍵帶入並登入
                 </button>
               </div>

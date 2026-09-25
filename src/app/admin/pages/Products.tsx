@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
-import { Chips, Empty, Field, Hl, Icon, Modal, OptMulti, OptSingle, PageHead, SearchBox } from '../../../components'
+import { AsyncButton, Chips, confirmDialog, Empty, Field, Hl, Icon, Modal, OptMulti, OptSingle, PageHead, QueryState, SearchBox, toast, useBusy } from '../../../components'
 import { CATS, KIND_KEY, KIND_TW, V_KINDS } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { useAdminData, useCrud } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { Product, ProductKind } from '../../../api/types/admin'
-import { fmt, includesQ, productKinds, uid, vendorName } from '../utils'
+import { fmt, includesQ, productKinds, vendorName } from '../utils'
 
 function ProductModal({ product, scopeVendorId, onClose }: { product: Product | null; scopeVendorId?: string; onClose: () => void }) {
-  const { data, create, update, toast } = useAdmin()
+  const data = useAdminData('vendors').data!
+  const { create, update } = useCrud()
   const [name, setName] = useState(product?.name || '')
   const [vendor, setVendor] = useState(vendorName(data.vendors, scopeVendorId ?? product?.vendor_id))
   const [kinds, setKinds] = useState<string[]>(product ? productKinds(product) : [])
@@ -21,31 +23,33 @@ function ProductModal({ product, scopeVendorId, onClose }: { product: Product | 
   const profitText = !cost && !price ? '' : `NT$ ${fmt(profit)}` + (nPrice ? `　（毛利率 ${Math.round((profit / nPrice) * 100)}%）` : '')
 
   /* 依名稱取得支援店家；不存在則建立一筆基本資料（暫存，供後續銷售分析歸戶） */
-  function resolveVendor(nm: string) {
+  async function resolveVendor(nm: string) {
     const t = nm.trim(); if (!t) return null
     const found = data.vendors.find((v) => v.name === t)
     if (found) return found.id
-    const id = uid('v')
-    create('vendors', { id, name: t, addr: '', lat: null, lng: null, contact: '', phone: '', im: '', pay: '', payOther: '', ship: '', shipPlace: '', draft: true },
+    const saved = await create('vendors', { name: t, addr: '', lat: null, lng: null, contact: '', phone: '', im: '', pay: '', payOther: '', ship: '', shipPlace: '', draft: true },
       `已建立支援店家「${t}」（基本資料待補）`, 'building-store')
-    return id
+    return saved ? saved.id : undefined
   }
 
-  function save(draft: boolean) {
+  /* 兩個送出按鈕共用：任一執行中時兩者皆停用 */
+  const [saving, run] = useBusy()
+  async function save(draft: boolean) {
     if (!name.trim()) return toast('請輸入商品名稱', 'alert-circle')
     if (!draft) {
       if (!kinds.length) return toast('請至少選擇一個商品分類', 'alert-circle')
       if (!cat) return toast('請選擇商品效用', 'alert-circle')
     }
+    const vendorId = await resolveVendor(vendor)
+    if (vendorId === undefined) return
     const rec = {
-      name: name.trim(), vendor_id: resolveVendor(vendor), kinds, kind: KIND_KEY[kinds[0]] || 'souvenir', cat,
+      name: name.trim(), vendor_id: vendorId, kinds, kind: KIND_KEY[kinds[0]] || 'souvenir', cat,
       cost: nCost, price_twd: nPrice, bonus_twd: Number(bonus) || 0, draft,
     }
     const msg = draft ? '已暫時儲存（草稿）' : '商品已儲存'
     const icon = draft ? 'device-floppy' : 'check'
-    onClose()
-    if (product) update('products', product.id, rec, msg, icon)
-    else create('products', { id: uid('p'), ...rec }, msg, icon)
+    const saved = product ? await update('products', product.id, rec, msg, icon) : await create('products', rec, msg, icon)
+    if (saved) onClose()
   }
 
   return (
@@ -69,8 +73,8 @@ function ProductModal({ product, scopeVendorId, onClose }: { product: Product | 
       </Field>
       <Field label="每件獎金 (NT$)"><input type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="120" /></Field>
       <div className="action-2">
-        <button className="btn btn-ghost" onClick={() => save(true)}><Icon name="device-floppy" />暫時儲存</button>
-        <button className="btn btn-primary" onClick={() => save(false)}><Icon name="check" />儲存商品</button>
+        <AsyncButton className="btn btn-ghost" disabled={saving} onClick={() => run(() => save(true))}><Icon name="device-floppy" />暫時儲存</AsyncButton>
+        <AsyncButton className="btn btn-primary" disabled={saving} onClick={() => run(() => save(false))}><Icon name="check" />儲存商品</AsyncButton>
       </div>
     </Modal>
   )
@@ -79,8 +83,13 @@ function ProductModal({ product, scopeVendorId, onClose }: { product: Product | 
 type KindFilter = ProductKind | '全部'
 
 export default function Products() {
+  const { queries, data } = useAdminData('vendors', 'products')
+  return <QueryState queries={queries}>{() => <ProductsView data={data!} />}</QueryState>
+}
+
+function ProductsView({ data }: { data: Pick<AdminData, 'vendors' | 'products'> }) {
   const { vendorId } = useParams()
-  const { data, remove } = useAdmin()
+  const { remove } = useCrud()
   const [q, setQ] = useState('')
   const [kind, setKind] = useState<KindFilter>('全部')
   const [cat, setCat] = useState('全部')
@@ -100,7 +109,7 @@ export default function Products() {
   const kindKeys: KindFilter[] = ['全部', ...V_KINDS.map((k) => KIND_KEY[k])]
 
   function del(p: Product) {
-    if (confirm('確定刪除此商品？')) remove('products', p.id, '已刪除商品')
+    return confirmDialog({ title: '刪除商品？', message: `「${p.name}」將被刪除。`, confirmLabel: '刪除', danger: true, onConfirm: () => remove('products', p.id, '已刪除商品') })
   }
 
   return (

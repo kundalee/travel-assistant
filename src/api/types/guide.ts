@@ -117,9 +117,23 @@ export interface UpcomingTour extends TourBase {
 }
 
 export interface Boutique {
+  id: string
   name: string
   price: number
   emo: string
+}
+
+export interface TourPhoto {
+  src: string
+  cap: string
+  /** 上傳者 */
+  up: string
+}
+
+/** 行程照片：領隊近期分享 / 團員上傳 */
+export interface TourPhotos {
+  shared: TourPhoto[]
+  fromMembers: TourPhoto[]
 }
 
 export interface Campaign {

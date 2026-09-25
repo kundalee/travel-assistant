@@ -1,20 +1,28 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, type ReactNode } from 'react'
 import { Icon } from './Icon'
 
 interface ModalProps {
   onClose: () => void
   title: ReactNode
   sub?: ReactNode
-  /** 置中對話框（否則為底部滑出的 sheet） */
+  /** 置中對話框（否則為底部滑出的 sheet）；未指定時依 <ModalStyle> 的預設 */
   center?: boolean
   children: ReactNode
+}
+
+/* 入口層級的預設樣式：<ModalStyle center> 內的 modal 預設置中（各 modal 仍可以 center={false} 覆寫） */
+const CenterDefault = createContext(false)
+export function ModalStyle({ center, children }: { center: boolean; children: ReactNode }) {
+  return <CenterDefault.Provider value={center}>{children}</CenterDefault.Provider>
 }
 
 /* 目前開啟中的 modal（後開的在最上層）；Esc 只關閉最上層 */
 const openModals: symbol[] = []
 
 /* 以條件渲染開關：{open && <Modal …/>} */
-export function Modal({ onClose, title, sub, center, children }: ModalProps) {
+export function Modal({ onClose, title, sub, center: centerProp, children }: ModalProps) {
+  const centerDefault = useContext(CenterDefault)
+  const center = centerProp ?? centerDefault
   const titleId = useId()
   const onCloseRef = useRef(onClose)
   useEffect(() => { onCloseRef.current = onClose })

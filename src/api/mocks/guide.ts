@@ -114,10 +114,10 @@ export const SAMPLE: GuideData = {
   ],
 
   boutique: [
-    { name: '京都西陣織絲巾', price: 1680, emo: '🧣' },
-    { name: '職人手作和菓子', price: 880, emo: '🍡' },
-    { name: '宇治抹茶精選組', price: 1250, emo: '🍵' },
-    { name: '清水燒茶杯對組', price: 2200, emo: '🍶' },
+    { id: 'b1', name: '京都西陣織絲巾', price: 1680, emo: '🧣' },
+    { id: 'b2', name: '職人手作和菓子', price: 880, emo: '🍡' },
+    { id: 'b3', name: '宇治抹茶精選組', price: 1250, emo: '🍵' },
+    { id: 'b4', name: '清水燒茶杯對組', price: 2200, emo: '🍶' },
   ],
 
   campaigns: [

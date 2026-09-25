@@ -1,22 +1,30 @@
 import { useState } from 'react'
-import { Icon, toast } from '../../../components'
+import { AsyncButton, Icon, QueryState, toast, useBusy } from '../../../components'
 import { fmt, includesQ } from '../../../lib/utils'
-import { usePartner } from '../store'
+import { useCancelledOrders, useReconcile } from '../queries'
 import type { CancelledOrder } from '../../../api/types/partner'
 
 /* 已取消：訂單明細與勾稽 */
 export default function Cancelled() {
-  const { data, setReconciled } = usePartner()
-  const [q, setQ] = useState('')
-  const rows = data.cancelled.filter((r) => includesQ([r.orderNo, r.product, r.tour], q))
+  const orders = useCancelledOrders()
+  return <QueryState queries={[orders]}>{() => <CancelledView cancelled={orders.data!} />}</QueryState>
+}
 
-  function toggle(r: CancelledOrder) {
-    setReconciled([r.orderNo], !r.reconciled)
+function CancelledView({ cancelled }: { cancelled: CancelledOrder[] }) {
+  const reconcile = useReconcile()
+  const [q, setQ] = useState('')
+  /* 勾稽送出中時停用所有勾選框，避免重複送出 */
+  const [saving, run] = useBusy()
+  const rows = cancelled.filter((r) => includesQ([r.orderNo, r.product, r.tour], q))
+
+  async function toggle(r: CancelledOrder) {
+    const ok = await reconcile.mutateAsync({ orderNos: [r.orderNo], reconciled: !r.reconciled }).then(() => true, () => false)
+    if (!ok) return
     toast(!r.reconciled ? '已勾稽 ' + r.orderNo : '取消勾稽', !r.reconciled ? 'check' : 'x')
   }
 
-  function reconcileAll() {
-    setReconciled(data.cancelled.map((r) => r.orderNo), true)
+  async function reconcileAll() {
+    await reconcile.mutateAsync({ orderNos: cancelled.map((r) => r.orderNo), reconciled: true })
     toast('已全部勾稽')
   }
 
@@ -31,7 +39,7 @@ export default function Cancelled() {
             <Icon name="search" />
             <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜尋訂單編號、商品或團名…" />
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={reconcileAll} disabled={!data.cancelled.length}><Icon name="checks" /> 全部勾稽</button>
+          <AsyncButton className="btn btn-ghost btn-sm" onClick={reconcileAll} disabled={!cancelled.length}><Icon name="checks" /> 全部勾稽</AsyncButton>
         </div>
         <div className="table-wrap">
           <div className="table-scroll">
@@ -43,7 +51,7 @@ export default function Cancelled() {
               <tbody>
                 {rows.length ? rows.map((r) => (
                   <tr key={r.orderNo}>
-                    <td><input type="checkbox" className="chk" checked={r.reconciled} onChange={() => toggle(r)} aria-label={`勾稽 ${r.orderNo}`} /></td>
+                    <td><input type="checkbox" className="chk" checked={r.reconciled} disabled={saving} onChange={() => run(() => toggle(r))} aria-label={`勾稽 ${r.orderNo}`} /></td>
                     <td className="tabular">{r.orderNo}</td>
                     <td>{r.product}</td><td>{r.tour}</td><td>{r.date}</td>
                     <td className="num">NT$ {fmt(r.amount)}</td>
@@ -53,7 +61,7 @@ export default function Cancelled() {
                   </tr>
                 )) : (
                   <tr><td colSpan={7}>
-                    {data.cancelled.length
+                    {cancelled.length
                       ? <div className="empty"><Icon name="search-off" /><h3>查無資料</h3><p>試試其他關鍵字。</p></div>
                       : <div className="empty"><Icon name="receipt-off" /><h3>無已取消訂單</h3><p>已取消的訂單明細會顯示於此，供您勾稽核對。</p></div>}
                   </td></tr>

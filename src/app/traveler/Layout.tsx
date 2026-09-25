@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Icon, type IconName } from '../../components'
-import { useTraveler } from './store'
+import { useNotifications } from './queries'
 
 /* 底部分頁；match 為該分頁涵蓋的子畫面路徑前綴 */
 const TABS: { path: string; icon: IconName; label: string; match: string[] }[] = [
@@ -13,15 +13,13 @@ const TABS: { path: string; icon: IconName; label: string; match: string[] }[] =
 ]
 
 export default function Layout() {
-  const { user, ready, data } = useTraveler()
+  const notis = useNotifications()
   const nav = useNavigate()
   const { pathname } = useLocation()
 
   useEffect(() => { window.scrollTo({ top: 0 }) }, [pathname])
 
-  if (!ready || !user) return null
-
-  const unread = data.notis.filter((n) => !n.read).length
+  const unread = notis.data?.filter((n) => !n.read).length ?? 0
   const isActive = (t: (typeof TABS)[number]) =>
     t.match.length ? t.match.some((m) => pathname.startsWith(m)) : pathname === '/traveler' || pathname === '/traveler/'
 

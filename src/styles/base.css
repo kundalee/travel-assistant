@@ -9,3 +9,23 @@ body { font-family: 'Inter', 'Noto Sans TC', sans-serif; }
    :where() 讓各入口既有規則（如 .empty i { display:block }）優先 */
 :where(i.ti) { font-style: normal; line-height: 1; display: inline-flex; vertical-align: -0.125em; }
 i.ti > svg { width: 1em; height: 1em; display: inline-block; vertical-align: top; }
+
+/* 寫入中的按鈕（AsyncButton）：停用、以旋轉圖示取代原本的圖示 */
+button[aria-busy="true"] { cursor: progress; opacity: 0.7; }
+button[aria-busy="true"] > i.ti:first-child { display: none; }
+button[aria-busy="true"]::before {
+  content: ''; width: 1em; height: 1em; flex-shrink: 0; display: inline-block; vertical-align: -0.125em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: ta-spin 0.7s linear infinite;
+}
+@keyframes ta-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button[aria-busy="true"]::before { animation-duration: 2s; } }
+
+/* 確認視窗（ConfirmHost）：各入口的 .btn / .sheet 樣式之上補充 */
+.confirm-msg { font-size: 14px; line-height: 1.65; color: var(--muted); white-space: pre-line; }
+.confirm-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 1.25rem; }
+.btn.btn-danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.btn-danger-solid:hover { filter: brightness(0.92); }
+
+/* 空狀態下方的動作按鈕（Empty 的 children）：不套用空狀態的大圖示樣式 */
+.empty .empty-acts { margin-top: 1rem; display: flex; justify-content: center; gap: 8px; }
+.empty .empty-acts i.ti { font-size: inherit; color: inherit; display: inline-flex; margin: 0; }

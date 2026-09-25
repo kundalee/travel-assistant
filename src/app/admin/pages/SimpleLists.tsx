@@ -1,9 +1,15 @@
-import { Empty, Icon, PageHead } from '../../../components'
-import { useAdmin } from '../store'
+import { AsyncButton, Empty, Icon, PageHead, QueryState } from '../../../components'
+import { useAdminData, useCrud } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import { stars } from '../utils'
 
 export function Bookings() {
-  const { data, update } = useAdmin()
+  const { queries, data } = useAdminData('bookings')
+  return <QueryState queries={queries}>{() => <BookingsView data={data!} />}</QueryState>
+}
+
+function BookingsView({ data }: { data: Pick<AdminData, 'bookings'> }) {
+  const { update } = useCrud()
   return (
     <div className="pad">
       <PageHead icon="clipboard-check" title="報名審核" />
@@ -16,7 +22,7 @@ export function Bookings() {
           </div>
           {b.status === 'approved'
             ? <span className="rbadge on">已核准</span>
-            : <div className="lacts"><button className="iconbtn-sm" title="核准" onClick={() => update('bookings', b.id, { status: 'approved' }, '已核准報名')}><Icon name="check" /></button></div>}
+            : <div className="lacts"><AsyncButton className="iconbtn-sm" title="核准" onClick={() => update('bookings', b.id, { status: 'approved' }, '已核准報名')}><Icon name="check" /></AsyncButton></div>}
         </div>
       )) : <Empty text="尚無報名" />}
     </div>
@@ -24,7 +30,11 @@ export function Bookings() {
 }
 
 export function Reviews() {
-  const { data } = useAdmin()
+  const { queries, data } = useAdminData('reviews')
+  return <QueryState queries={queries}>{() => <ReviewsView data={data!} />}</QueryState>
+}
+
+function ReviewsView({ data }: { data: Pick<AdminData, 'reviews'> }) {
   return (
     <div className="pad">
       <PageHead icon="star" title="評價管理" />
@@ -42,7 +52,11 @@ export function Reviews() {
 }
 
 export function Campaigns() {
-  const { data } = useAdmin()
+  const { queries, data } = useAdminData('campaigns')
+  return <QueryState queries={queries}>{() => <CampaignsView data={data!} />}</QueryState>
+}
+
+function CampaignsView({ data }: { data: Pick<AdminData, 'campaigns'> }) {
   return (
     <div className="pad">
       <PageHead icon="discount" title="行銷 / 團購" />

@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { OrderRow, OrderModal } from '../components/OrderParts'
-import { Empty, Icon, type IconName } from '../../../components'
-import { useAdmin } from '../store'
+import { Empty, Icon, type IconName, QueryState } from '../../../components'
+import { useAdminData } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import { fmt } from '../utils'
 import { CreateUserModal } from './Users'
 
 export default function Dashboard() {
-  const { data } = useAdmin()
+  const { queries, data } = useAdminData('users', 'tours', 'orders')
+  return <QueryState queries={queries}>{() => <DashboardView data={data!} />}</QueryState>
+}
+
+function DashboardView({ data }: { data: Pick<AdminData, 'users' | 'tours' | 'orders'> }) {
   const nav = useNavigate()
   const [orderId, setOrderId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)

@@ -78,7 +78,16 @@ export interface TripOrder {
   local?: { code: string; sym: string; amount: number }
 }
 
+/** 當地幣別（結帳時顯示參考金額）；per = 1 台幣可換多少當地幣 */
+export interface LocalCurrency {
+  code: string
+  sym: string
+  per: number
+}
+
 export interface OngoingTrip extends TripBase {
+  /** 行程所在地的幣別；無則不顯示當地幣別參考 */
+  currency?: LocalCurrency
   guideRole: string
   phone: string
   guideImg: string
@@ -118,10 +127,13 @@ export interface Chat {
 }
 
 export interface AlbumPhoto {
+  id: string
   src: string
   cap: string
   up: string
   by: 'guide' | 'mine'
+  /** 目前帳號已收藏 */
+  favorite?: boolean
 }
 
 export type NoticeType = '每日公告' | '一般公告'
@@ -140,6 +152,8 @@ export interface Boutique {
   price: number
   emo: string
   desc: string
+  /** 外接購物系統的商品頁 */
+  url: string
 }
 
 export interface GroupBuyItem {

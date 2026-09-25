@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Empty, Field, Hl, Icon, MapEmbed, Modal, OptSingle, PageHead, SearchBox } from '../../../components'
+import { AsyncButton, confirmDialog, Empty, Field, Hl, Icon, MapEmbed, Modal, OptSingle, PageHead, QueryState, SearchBox, toast, useBusy } from '../../../components'
 import { V_PAY, V_SHIP } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { useAdminData, useCrud } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { Vendor } from '../../../api/types/admin'
-import { includesQ, parseCoord, uid } from '../utils'
+import { includesQ, parseCoord } from '../utils'
 
-function VendorModal({ vendor, onClose, onDelete }: { vendor: Vendor | null; onClose: () => void; onDelete: (v: Vendor) => void }) {
-  const { create, update, toast } = useAdmin()
+function VendorModal({ vendor, onClose, onDelete }: { vendor: Vendor | null; onClose: () => void; onDelete: (v: Vendor) => unknown }) {
+  const { create, update } = useCrud()
   const [f, setF] = useState({
     name: vendor?.name || '', addr: vendor?.addr || '',
     coord: vendor?.lat != null ? `${vendor.lat}, ${vendor.lng}` : '',
@@ -18,7 +19,9 @@ function VendorModal({ vendor, onClose, onDelete }: { vendor: Vendor | null; onC
   const c = parseCoord(f.coord)
 
   /* draft=true 為暫時儲存，可略過必填 */
-  function save(draft: boolean) {
+  /* 兩個送出按鈕共用：任一執行中時兩者皆停用 */
+  const [saving, run] = useBusy()
+  async function save(draft: boolean) {
     if (!f.name.trim()) return toast('請輸入支援店家名稱', 'alert-circle')
     if (!draft) {
       if (!f.pay) return toast('請選擇結帳方式', 'alert-circle')
@@ -30,9 +33,8 @@ function VendorModal({ vendor, onClose, onDelete }: { vendor: Vendor | null; onC
     const rec = { ...rest, name: f.name.trim(), lat: c?.lat ?? null, lng: c?.lng ?? null, draft }
     const msg = draft ? '已暫時儲存（草稿）' : '支援店家已儲存'
     const icon = draft ? 'device-floppy' : 'check'
-    onClose()
-    if (vendor) update('vendors', vendor.id, rec, msg, icon)
-    else create('vendors', { id: uid('v'), ...rec }, msg, icon)
+    const saved = vendor ? await update('vendors', vendor.id, rec, msg, icon) : await create('vendors', rec, msg, icon)
+    if (saved) onClose()
   }
 
   return (
@@ -58,11 +60,11 @@ function VendorModal({ vendor, onClose, onDelete }: { vendor: Vendor | null; onC
       </Field>
 
       <div className="action-2">
-        <button className="btn btn-ghost" onClick={() => save(true)}><Icon name="device-floppy" />暫時儲存</button>
-        <button className="btn btn-primary" onClick={() => save(false)}><Icon name="check" />儲存</button>
+        <AsyncButton className="btn btn-ghost" disabled={saving} onClick={() => run(() => save(true))}><Icon name="device-floppy" />暫時儲存</AsyncButton>
+        <AsyncButton className="btn btn-primary" disabled={saving} onClick={() => run(() => save(false))}><Icon name="check" />儲存</AsyncButton>
       </div>
       {vendor && (
-        <button className="btn btn-ghost btn-block btn-sm btn-danger" style={{ marginTop: '0.7rem' }} onClick={() => { onClose(); onDelete(vendor) }}>
+        <button className="btn btn-ghost btn-block btn-sm btn-danger" style={{ marginTop: '0.7rem' }} onClick={() => onDelete(vendor)}>
           <Icon name="trash" />刪除此廠商
         </button>
       )}
@@ -71,7 +73,12 @@ function VendorModal({ vendor, onClose, onDelete }: { vendor: Vendor | null; onC
 }
 
 export default function Vendors() {
-  const { data, remove } = useAdmin()
+  const { queries, data } = useAdminData('vendors', 'products')
+  return <QueryState queries={queries}>{() => <VendorsView data={data!} />}</QueryState>
+}
+
+function VendorsView({ data }: { data: Pick<AdminData, 'vendors' | 'products'> }) {
+  const { remove } = useCrud()
   const nav = useNavigate()
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<Vendor | 'new' | null>(null)
@@ -84,7 +91,7 @@ export default function Vendors() {
   const drafts = data.vendors.filter((v) => v.draft).length
 
   function del(v: Vendor) {
-    if (confirm(`確定刪除支援店家「${v.name}」？`)) remove('vendors', v.id, '已刪除支援店家')
+    return confirmDialog({ title: '刪除支援店家？', message: `「${v.name}」將被刪除。`, confirmLabel: '刪除', danger: true, onConfirm: async () => { if (await remove('vendors', v.id, '已刪除支援店家')) setEditing(null) } })
   }
 
   return (

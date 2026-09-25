@@ -1,32 +1,35 @@
 import { useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { addLine, CartBar, cartCount, CartModal, changeLineQty, Empty, Field, Icon, LocationAccordion, Modal, toast, type CartLine } from '../../../components'
+import { addLine, AsyncButton, CartBar, cartCount, type CartLine, CartModal, changeLineQty, confirmDialog, Empty, Field, Icon, LocationAccordion, Modal, QueryState, toast } from '../../../components'
 import { ostatusClass, STATUS_ALL } from '../../../lib/orders'
-import { fmt, uid } from '../../../lib/utils'
+import { fmt } from '../../../lib/utils'
 import { OngoingBanner, ReviewCard, SubHead } from '../components'
-import { IMG } from '../../../api/mocks/guide'
-import { useGuide } from '../store'
-import type { Notice, NoticeType, OngoingTour } from '../../../api/types/guide'
+import {
+  useChats, useDeleteNotice, useMembers, useNotices, usePlaceGroupOrder, useSaveNotice, useSharePhotos, useTourPhotos, useTours, useUpdateMemberOrder,
+} from '../queries'
+import type { Member, Notice, NoticeType, OngoingTour, OrderStatus, TourPhoto } from '../../../api/types/guide'
 
 type MgTab = 'plan' | 'photo' | 'buy' | 'notice' | 'call' | 'review'
 const TABS: [MgTab, string][] = [['plan', '行程安排'], ['photo', '照片分享'], ['buy', '購買狀況'], ['notice', '每日公告'], ['call', '呼叫團員'], ['review', '查看評價']]
 const NOTICE_TYPES: NoticeType[] = ['晨喚', '集合時間與地點', '行程概述', '旅行社公告']
 
 /* ── 照片分享 ── */
-function ShareModal({ tour, onClose }: { tour: OngoingTour; onClose: () => void }) {
-  const { data, commit } = useGuide()
+function ShareModal({ tour, members, onClose }: { tour: OngoingTour; members: Member[]; onClose: () => void }) {
+  const share = useSharePhotos(tour.tourId)
   const fileRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
   const [scope, setScope] = useState<'all' | 'ind'>('all')
   const [picked, setPicked] = useState<string[]>([])
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
 
-  function publish() {
+  /* 發佈成功才關閉；失敗時保留已選的照片 */
+  async function publish() {
     if (!files.length) return toast('請先選擇照片', 'alert-circle')
     if (scope === 'ind' && !picked.length) return toast('請選擇至少一位團員', 'alert-circle')
-    const who = scope === 'all' ? '所有團員' : picked.map((id) => data.members.find((m) => m.id === id)?.name).join('、')
+    const who = scope === 'all' ? '所有團員' : picked.map((id) => members.find((m) => m.id === id)?.name).join('、')
+    const r = await share.mutateAsync({ files, memberIds: scope === 'all' ? 'all' : picked.join(',') })
+    toast(`已發佈 ${r.count} 張照片給${who}`)
     onClose()
-    commit(() => {}, { type: 'sharePhotos', tourId: tour.tourId, files, memberIds: scope === 'all' ? 'all' : picked }, `已發佈 ${files.length} 張照片給${who}`)
   }
 
   return (
@@ -46,19 +49,35 @@ function ShareModal({ tour, onClose }: { tour: OngoingTour; onClose: () => void 
       </Field>
       {scope === 'ind' && (
         <div className="mpick">
-          {data.members.map((m) => (
+          {members.map((m) => (
             <button key={m.id} className={`mp ${picked.includes(m.id) ? 'on' : ''}`} onClick={() => toggle(m.id)}><img src={m.av} alt="" />{m.name}</button>
           ))}
         </div>
       )}
-      <button className="btn btn-primary btn-block btn-lg" onClick={publish}><Icon name="send" />發佈照片</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={publish}><Icon name="send" />發佈照片</AsyncButton>
     </Modal>
   )
 }
 
-function PhotoPane({ tour }: { tour: OngoingTour }) {
+function PhotoGrid({ photos }: { photos: TourPhoto[] }) {
+  return (
+    <div className="photo-grid rounded">
+      {photos.map((p, i) => (
+        <a className="cell" key={i} href={p.src} target="_blank" rel="noopener" download title={`${p.cap} · ${p.up}`}>
+          <img src={p.src} alt={p.cap} loading="lazy" /><div className="cap">{p.cap}</div>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function PhotoPane({ tour, members }: { tour: OngoingTour; members: Member[] }) {
   const [sharing, setSharing] = useState(false)
-  const recent: [string, string][] = [[IMG.kyoto, '清水寺'], [IMG.tokyo, '二年坂'], [IMG.hokkaido, '嵐山'], [IMG.hualien, '午餐'], [IMG.seoul, '祇園'], [IMG.bangkok, '合照']]
+  const [membersOpen, setMembersOpen] = useState(false)
+  /* 開啟照片分享時載入（近期分享 / 來自團員）；分享成功後自動重新讀取 */
+  const photosQ = useTourPhotos(tour.tourId)
+  const photos = photosQ.data
+
   return (
     <>
       <div className="share-card">
@@ -69,34 +88,35 @@ function PhotoPane({ tour }: { tour: OngoingTour }) {
       <div className="share-card">
         <div className="share-ico info-soft"><Icon name="download" /></div>
         <div className="share-txt"><h4>來自團員</h4><p>團員上傳的照片，可瀏覽並下載</p></div>
-        <button className="btn btn-ghost btn-sm" onClick={() => toast('已開啟團員相簿，可下載照片', 'download')}>選擇照片與下載</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setMembersOpen(true)} disabled={!photos}>選擇照片與下載</button>
       </div>
       <div className="section-title sm" style={{ marginTop: '1.25rem' }}><Icon name="photo" />近期分享</div>
-      <div className="photo-grid rounded">
-        {recent.map(([src, cap]) => <div className="cell" key={cap}><img src={src} alt={cap} loading="lazy" /><div className="cap">{cap}</div></div>)}
-      </div>
-      {sharing && <ShareModal tour={tour} onClose={() => setSharing(false)} />}
+      <QueryState queries={[photosQ]}>{() => <PhotoGrid photos={photos!.shared} />}</QueryState>
+      {sharing && <ShareModal tour={tour} members={members} onClose={() => setSharing(false)} />}
+      {membersOpen && photos && (
+        <Modal onClose={() => setMembersOpen(false)} title="來自團員" sub={`${photos.fromMembers.length} 張 · 點選照片即可下載`}>
+          {photos.fromMembers.length ? <PhotoGrid photos={photos.fromMembers} /> : <Empty icon="photo-off" text="團員尚未上傳照片" />}
+        </Modal>
+      )}
     </>
   )
 }
 
 /* ── 購買狀況：各團員訂單 ── */
-function BuyPane({ tour }: { tour: OngoingTour }) {
-  const { data, commit } = useGuide()
+function BuyPane({ tour, members }: { tour: OngoingTour; members: Member[] }) {
+  const update = useUpdateMemberOrder(tour.tourId)
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const total = Object.values(tour.memberOrders).flat().filter((o) => o.status !== '已取消').reduce((s, o) => s + o.amount, 0)
 
-  function setStatus(memberId: string, orderId: string, status: (typeof STATUS_ALL)[number], msg: string, icon?: 'x') {
-    commit((d) => {
-      const o = d.ongoing.find((t) => t.tourId === tour.tourId)?.memberOrders[memberId]?.find((x) => x.id === orderId)
-      if (o) o.status = status
-    }, { type: 'updateMemberOrder', tourId: tour.tourId, memberId, orderId, status }, msg, icon)
+  async function setStatus(memberId: string, orderId: string, status: OrderStatus, msg: string, icon?: 'x') {
+    await update.mutateAsync({ memberId, orderId, status })
+    toast(msg, icon)
   }
 
   return (
     <>
       <div className="section-title sm"><Icon name="receipt" />訂單明細<span className="title-aside">團體合計 NT$ {fmt(total)}</span></div>
-      {data.members.map((m) => {
+      {members.map((m) => {
         const orders = tour.memberOrders[m.id] || []
         if (!orders.length) return null
         const sum = orders.reduce((s, o) => s + o.amount, 0)
@@ -116,11 +136,11 @@ function BuyPane({ tour }: { tour: OngoingTour }) {
                     {o.status !== '已取消' && (
                       <div className="order-acts">
                         {/* 修改：依序切換至下一個狀態 */}
-                        <button className="oact" onClick={() => {
+                        <AsyncButton className="oact" onClick={() => {
                           const next = STATUS_ALL[(STATUS_ALL.indexOf(o.status) + 1) % STATUS_ALL.length]
-                          setStatus(m.id, o.id, next, `${m.name}：${o.product} → ${next}`)
-                        }}><Icon name="edit" />修改</button>
-                        <button className="oact del" onClick={() => setStatus(m.id, o.id, '已取消', '已取消訂單', 'x')}><Icon name="x" />取消</button>
+                          return setStatus(m.id, o.id, next, `${m.name}：${o.product} → ${next}`)
+                        }}><Icon name="edit" />修改</AsyncButton>
+                        <AsyncButton className="oact del" onClick={() => setStatus(m.id, o.id, '已取消', '已取消訂單', 'x')}><Icon name="x" />取消</AsyncButton>
                       </div>
                     )}
                   </div>
@@ -134,23 +154,18 @@ function BuyPane({ tour }: { tour: OngoingTour }) {
   )
 }
 
-/* ── 每日公告 ── */
-function NoticeModal({ tour, notice, onClose }: { tour: OngoingTour; notice: Notice | null; onClose: () => void }) {
-  const { commit } = useGuide()
+/* ── 每日公告（TanStack Query：資料與寫入見 ../queries/notices.ts） ── */
+function NoticeModal({ tourId, notice, onClose }: { tourId: string; notice: Notice | null; onClose: () => void }) {
+  const save = useSaveNotice(tourId)
   const [type, setType] = useState<NoticeType>(notice?.type || '晨喚')
   const [headline, setHeadline] = useState(notice?.headline || '')
   const [body, setBody] = useState(notice?.body || '')
 
-  function save(pub: boolean) {
+  async function submit(pub: boolean) {
     if (!headline.trim()) return toast('請輸入標題', 'alert-circle')
-    const n: Notice = { id: notice?.id || uid('nt'), type, headline: headline.trim(), body: body.trim(), pub, time: pub ? '剛剛' : '草稿' }
+    await save.mutateAsync({ ...notice, type, headline: headline.trim(), body: body.trim(), pub })
+    toast(pub ? '公告已發佈給團員 📢' : '已存為草稿')
     onClose()
-    commit((d) => {
-      const t = d.ongoing.find((x) => x.tourId === tour.tourId)!
-      const i = t.notices.findIndex((x) => x.id === n.id)
-      if (i >= 0) t.notices[i] = n
-      else t.notices.unshift(n)
-    }, { type: 'saveNotice', tourId: tour.tourId, notice: n }, pub ? '公告已發佈給團員 📢' : '已存為草稿')
   }
 
   return (
@@ -162,51 +177,59 @@ function NoticeModal({ tour, notice, onClose }: { tour: OngoingTour; notice: Not
       </Field>
       <Field label="標題"><input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="例：明日 06:30 晨喚" /></Field>
       <Field label="內容"><textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="輸入公告內容…" /></Field>
+      {/* save.isPending：任一按鈕送出中時兩者皆停用 */}
       <div className="action-2">
-        <button className="btn btn-ghost" onClick={() => save(false)}><Icon name="device-floppy" />存為草稿</button>
-        <button className="btn btn-primary" onClick={() => save(true)}><Icon name="speakerphone" />發佈公告</button>
+        <AsyncButton className="btn btn-ghost" disabled={save.isPending} onClick={() => submit(false)}><Icon name="device-floppy" />存為草稿</AsyncButton>
+        <AsyncButton className="btn btn-primary" disabled={save.isPending} onClick={() => submit(true)}><Icon name="speakerphone" />發佈公告</AsyncButton>
       </div>
     </Modal>
   )
 }
 
-function NoticePane({ tour }: { tour: OngoingTour }) {
-  const { commit } = useGuide()
+function NoticePane({ tourId }: { tourId: string }) {
+  const notices = useNotices(tourId)
+  const save = useSaveNotice(tourId)
+  const del = useDeleteNotice(tourId)
   const [editing, setEditing] = useState<Notice | 'new' | null>(null)
 
-  const publish = (n: Notice) => commit((d) => {
-    const x = d.ongoing.find((t) => t.tourId === tour.tourId)!.notices.find((y) => y.id === n.id)
-    if (x) { x.pub = true; x.time = '剛剛' }
-  }, { type: 'saveNotice', tourId: tour.tourId, notice: { ...n, pub: true, time: '剛剛' } }, '公告已發佈 📢')
+  const publish = async (n: Notice) => {
+    await save.mutateAsync({ ...n, pub: true })
+    toast('公告已發佈 📢')
+  }
 
-  const remove = (id: string) => commit((d) => {
-    const t = d.ongoing.find((x) => x.tourId === tour.tourId)!
-    t.notices = t.notices.filter((x) => x.id !== id)
-  }, { type: 'deleteNotice', tourId: tour.tourId, id }, '已刪除公告', 'trash')
+  const remove = (n: Notice) => confirmDialog({
+    title: '刪除公告？',
+    message: n.pub ? `「${n.headline}」已發佈給團員，刪除後團員將看不到此公告。` : `草稿「${n.headline}」將被刪除。`,
+    confirmLabel: '刪除', danger: true,
+    onConfirm: async () => {
+      await del.mutateAsync(n.id)
+      toast('已刪除公告', 'trash')
+    },
+  })
 
   return (
     <>
       <button className="btn btn-primary btn-block" style={{ marginBottom: '1rem' }} onClick={() => setEditing('new')}><Icon name="plus" />新增公告</button>
-      {tour.notices.length ? tour.notices.map((n) => (
-        <div className="crud-card" key={n.id}>
-          <div className="crud-top"><span className={`crud-badge ${n.pub ? 'pub' : 'draft'}`}>{n.type}</span><div className="crud-title">{n.headline}</div></div>
-          <div className="crud-body">{n.body}</div>
-          <div className="crud-meta"><Icon name="clock" />{n.time} · {n.pub ? '已發佈' : '草稿'}</div>
-          <div className="crud-acts">
-            {!n.pub && <button className="oact pay" onClick={() => publish(n)}><Icon name="speakerphone" />發佈</button>}
-            <button className="oact" onClick={() => setEditing(n)}><Icon name="edit" />修改</button>
-            <button className="oact del" onClick={() => remove(n.id)}><Icon name="trash" />刪除</button>
+      <QueryState queries={[notices]}>{() => notices.data!.length ? notices.data!.map((n) => (
+          <div className="crud-card" key={n.id}>
+            <div className="crud-top"><span className={`crud-badge ${n.pub ? 'pub' : 'draft'}`}>{n.type}</span><div className="crud-title">{n.headline}</div></div>
+            <div className="crud-body">{n.body}</div>
+            <div className="crud-meta"><Icon name="clock" />{n.time} · {n.pub ? '已發佈' : '草稿'}</div>
+            <div className="crud-acts">
+              {!n.pub && <AsyncButton className="oact pay" onClick={() => publish(n)}><Icon name="speakerphone" />發佈</AsyncButton>}
+              <button className="oact" onClick={() => setEditing(n)}><Icon name="edit" />修改</button>
+              <button className="oact del" onClick={() => remove(n)}><Icon name="trash" />刪除</button>
+            </div>
           </div>
-        </div>
-      )) : <Empty icon="speakerphone" text="尚無公告" hint="點上方按鈕新增每日公告" />}
-      {editing && <NoticeModal key={editing === 'new' ? 'new' : editing.id} tour={tour} notice={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+        )) : <Empty icon="speakerphone" text="尚無公告" hint="點上方按鈕新增每日公告" />}</QueryState>
+      {editing && <NoticeModal key={editing === 'new' ? 'new' : editing.id} tourId={tourId} notice={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </>
   )
 }
 
 /* ── 呼叫團員：群體 / 個別 → 對話 ── */
-function CallPane({ tour }: { tour: OngoingTour }) {
-  const { data } = useGuide()
+function CallPane({ tour, members }: { tour: OngoingTour; members: Member[] }) {
+  const chats = useChats()
   const nav = useNavigate()
   return (
     <>
@@ -214,12 +237,12 @@ function CallPane({ tour }: { tour: OngoingTour }) {
         <Icon name="users" />群體呼叫（全體團員）
       </button>
       <div className="section-title sm"><Icon name="phone-call" />個別呼叫</div>
-      {data.members.map((m) => (
+      {members.map((m) => (
         <div className="guide-strip" style={{ marginBottom: '0.6rem' }} key={m.id}>
           <img src={m.av} alt={m.name} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="g-name">{m.name}</div>
-            <div className="g-role ellipsis">{data.chats[m.id]?.msgs.at(-1)?.text || '尚無對話紀錄'}</div>
+            <div className="g-role ellipsis">{chats.data?.chats[m.id]?.msgs.at(-1)?.text || (chats.isPending ? '…' : '尚無對話紀錄')}</div>
           </div>
           <button className="icon-btn accent" onClick={() => nav(`/guide/chat/${m.id}`)} aria-label={`與 ${m.name} 對話`}><Icon name="message" /></button>
         </div>
@@ -241,15 +264,23 @@ function ReviewPane({ tour }: { tour: OngoingTour }) {
 
 /* 進行中行程管理：/guide/tours/:tourId/manage?tab= */
 export default function Manage() {
-  const { tourId } = useParams()
-  const { data, commit } = useGuide()
+  const { tourId = '' } = useParams()
+  const tours = useTours()
+  const members = useMembers()
+  return (
+    <QueryState queries={[tours, members]}>{() => {
+      const tour = tours.data!.ongoing.find((t) => t.tourId === tourId)
+      return tour ? <ManageView tour={tour} members={members.data!.members} /> : <Navigate to="/guide/tours" replace />
+    }}</QueryState>
+  )
+}
+
+function ManageView({ tour, members }: { tour: OngoingTour; members: Member[] }) {
+  const placeOrder = usePlaceGroupOrder(tour.tourId)
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as MgTab) || 'plan'
   const [cart, setCart] = useState<CartLine[]>([])
   const [cartOpen, setCartOpen] = useState(false)
-
-  const tour = data.ongoing.find((t) => t.tourId === tourId)
-  if (!tour) return <Navigate to="/guide/tours" replace />
 
   const souvenirs = tour.locations.flatMap((l) => l.souvenirs)
 
@@ -260,11 +291,12 @@ export default function Manage() {
     toast('已加入購物車：' + s.name, 'shopping-cart-plus')
   }
 
-  function confirmOrder() {
+  async function confirmOrder() {
     if (!cart.length) return toast('購物車是空的', 'alert-circle')
-    const items = cart.map(({ id, qty }) => ({ id, qty }))
-    setCart([]); setCartOpen(false)
-    commit(() => {}, { type: 'placeGroupOrder', tourId: tour!.tourId, items }, `已為團體確認下單 ${cartCount(cart)} 件`)
+    await placeOrder.mutateAsync(cart.map(({ id, qty }) => ({ id, qty })))
+    toast(`已為團體確認下單 ${cartCount(cart)} 件`)
+    setCart([])
+    setCartOpen(false)
   }
 
   return (
@@ -285,10 +317,10 @@ export default function Manage() {
             <LocationAccordion locations={tour.locations} onAdd={addToCart} />
           </>
         )}
-        {tab === 'photo' && <PhotoPane tour={tour} />}
-        {tab === 'buy' && <BuyPane tour={tour} />}
-        {tab === 'notice' && <NoticePane tour={tour} />}
-        {tab === 'call' && <CallPane tour={tour} />}
+        {tab === 'photo' && <PhotoPane tour={tour} members={members} />}
+        {tab === 'buy' && <BuyPane tour={tour} members={members} />}
+        {tab === 'notice' && <NoticePane tourId={tour.tourId} />}
+        {tab === 'call' && <CallPane tour={tour} members={members} />}
         {tab === 'review' && <ReviewPane tour={tour} />}
       </div>
 

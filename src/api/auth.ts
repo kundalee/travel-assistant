@@ -2,9 +2,11 @@
    登入 / 註冊（所有入口共用同一組帳號）
    一個帳號可擁有多個身分（roles）；進入哪個入口由網址決定，
    入口會檢查帳號是否具備該身分。
-   目前為 mock 實作；串接正式後端時實作 AuthApi 並替換 `authApi` 匯出。
    ═══════════════════════════════════════════════ */
-import { session } from './session'
+import { ApiError, apiUrl, isFake, setAuthToken } from './client'
+import { fillPath } from './endpoints'
+import { get, post, resource } from './resource'
+import { storage } from './storage'
 
 export type Role = 'admin' | 'guide' | 'traveler' | 'partner'
 
@@ -26,6 +28,7 @@ export interface RegisterInput {
 }
 
 export interface AuthApi {
+  /** true = 帳號群組由假後端回應（登入視窗顯示體驗帳號） */
   readonly mock: boolean
   login(email: string, password: string): Promise<AuthUser>
   /** 回傳 null 表示需先完成 Email 驗證（或等待審核）才能登入 */
@@ -34,39 +37,79 @@ export interface AuthApi {
   forgotPassword(email: string): Promise<void>
   changePassword(password: string): Promise<void>
   logout(): Promise<void>
+  /** 以保存的 token 還原登入狀態（token 存於 localStorage，關閉分頁後仍保持登入） */
   restoreSession(): Promise<AuthUser | null>
+  /** 其他分頁登入 / 登出時通知；回傳取消訂閱的函式 */
+  onOtherTabChange(cb: () => void): () => void
 }
 
-/* 體驗帳號：每個入口一組（listedOn = 列在哪個入口的登入視窗）。
-   guide 同時具備團員身分，用來示範多重身分：於 /guide 登入後可直接進入 /traveler */
-export const DEMO_ACCOUNTS: (AuthUser & { password: string; listedOn: Role })[] = [
-  { id: 'demo-admin', name: '系統管理員', email: 'admin@example.com', password: 'admin1234', roles: ['admin'], listedOn: 'admin', demo: true },
-  { id: 'demo-guide', name: '王大明', email: 'guide@example.com', password: 'guide1234', roles: ['guide', 'traveler'], listedOn: 'guide', demo: true },
-  { id: 'demo-traveler', name: '團員', email: 'member@example.com', password: 'member1234', roles: ['traveler'], listedOn: 'traveler', demo: true },
-  { id: 'demo-partner', name: '京都物產店', email: 'store@example.com', password: 'store1234', roles: ['partner'], listedOn: 'partner', demo: true },
-]
+interface TokenResponse { token: string; user: AuthUser }
 
-const SESSION_KEY = 'auth_session'
+/** 帳號端點；頁面請使用下方的 authApi（負責保存 token） */
+export const authEndpoints = resource('auth', '帳號 Auth', {
+  login: post<TokenResponse, { email: string; password: string }>()('/auth/login', '登入'),
+  register: post<Partial<TokenResponse> | null, RegisterInput>()('/auth/register', '註冊（團員 / 支援店家）'),
+  oauth: get<void>()('/auth/oauth/:provider', 'Google / Facebook 登入（整頁跳轉）'),
+  forgotPassword: post<void, { email: string }>()('/auth/forgot-password', '寄送重設密碼信'),
+  changePassword: post<void, { password: string }>()('/auth/change-password', '修改密碼'),
+  logout: post()('/auth/logout', '登出'),
+  me: get<AuthUser>()('/auth/me', '目前登入的帳號（還原登入狀態）'),
+}, { crud: false })
+const ep = authEndpoints
 
-const mockAuth: AuthApi = {
-  mock: true,
+const TOKEN_KEY = 'auth_token'
+
+function storeToken(token: string | null) {
+  setAuthToken(token)
+  if (token) storage.set(TOKEN_KEY, token)
+  else storage.remove(TOKEN_KEY)
+}
+
+export const authApi: AuthApi = {
+  mock: isFake('auth'),
   async login(email, password) {
-    const acc = DEMO_ACCOUNTS.find((a) => a.email === email.toLowerCase() && a.password === password)
-    if (!acc) throw new Error('電子郵件或密碼錯誤。')
-    const { password: _pw, listedOn: _listedOn, ...user } = acc
-    session.set(SESSION_KEY, user)
-    return user
+    const res = await ep.login({ email, password })
+    storeToken(res.token)
+    return res.user
   },
-  async register() {
-    throw new Error('展示模式無法註冊，請使用體驗帳號登入。')
+  async register(input) {
+    const res = await ep.register(input)
+    if (!res?.token || !res.user) return null
+    storeToken(res.token)
+    return res.user
   },
   async oauth(provider) {
-    throw new Error(`${provider === 'google' ? 'Google' : 'Facebook'} 登入需串接後端後才能使用。`)
+    /* 真正的後端：整頁跳轉至第三方登入；假後端無法模擬，直接回報錯誤 */
+    if (isFake('auth')) {
+      await ep.oauth({ provider })
+      return
+    }
+    window.location.assign(apiUrl(`${fillPath(ep.oauth.endpoint.path, { provider })}?redirect=${encodeURIComponent(window.location.href)}`))
   },
-  async forgotPassword() {},
-  async changePassword() {},
-  async logout() { session.remove(SESSION_KEY) },
-  async restoreSession() { return session.get<AuthUser>(SESSION_KEY) },
+  async forgotPassword(email) {
+    await ep.forgotPassword({ email })
+  },
+  async changePassword(password) {
+    await ep.changePassword({ password })
+  },
+  async logout() {
+    try { await ep.logout() } finally { storeToken(null) }
+  },
+  async restoreSession() {
+    const token = storage.get<string>(TOKEN_KEY)
+    setAuthToken(token)
+    if (!token) return null
+    try {
+      return await ep.me()
+    } catch (e) {
+      /* 只有 401（token 失效）才清除；離線等錯誤保留 token，下次開啟再試 */
+      if (e instanceof ApiError && e.status === 401) storeToken(null)
+      return null
+    }
+  },
+  onOtherTabChange(cb) {
+    const listener = (e: StorageEvent) => { if (e.key === TOKEN_KEY || e.key === null) cb() }
+    window.addEventListener('storage', listener)
+    return () => window.removeEventListener('storage', listener)
+  },
 }
-
-export const authApi: AuthApi = mockAuth

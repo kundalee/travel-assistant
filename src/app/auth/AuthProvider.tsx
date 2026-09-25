@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { authApi, type AuthUser, type RegisterInput, type Role } from '../../api/auth'
 import { toast } from '../../components'
+import { queryClient } from '../queryClient'
 
 interface AuthStore {
   user: AuthUser | null
@@ -26,7 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    authApi.restoreSession().then(setUser).catch(() => setUser(null)).finally(() => setReady(true))
+    const restore = () => authApi.restoreSession().then(setUser).catch(() => setUser(null)).finally(() => setReady(true))
+    restore()
+    /* 其他分頁登入 / 登出 / 切換帳號時同步 */
+    return authApi.onOtherTabChange(restore)
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
@@ -46,6 +50,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     toast('已登出', 'logout')
   }, [])
+
+  /* 換帳號或登出時清除伺服器資料快取，避免看到上一個帳號的資料 */
+  const userId = user?.id
+  useEffect(() => { queryClient.clear() }, [userId])
 
   const hasRole = useCallback((role: Role) => !!user?.roles.includes(role), [user])
 

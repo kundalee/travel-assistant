@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import SouvPicker from '../components/SouvPicker'
-import { Empty, Field, Hl, Icon, Modal, PageHead, SearchBox, TableEmpty } from '../../../components'
+import { AsyncButton, confirmDialog, Empty, Field, Hl, Icon, Modal, PageHead, QueryState, SearchBox, TableEmpty, toast } from '../../../components'
 import { DataNote } from '../components/DataNote'
 import { HISTORY_AFTER_DAYS, IMG, TOUR_STATUS_TW } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { toursApi } from '../../../api/admin'
+import { useQueryClient } from '@tanstack/react-query'
+import { adminKeys, useAdminData, useCrud, useRoster } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { Tour, TourStatus } from '../../../api/types/admin'
-import { avatarUrl, computeTourStatus, includesQ, isHistoryTour, rosterOf, tourBatch, uid } from '../utils'
+import { avatarUrl, computeTourStatus, errMsg, includesQ, isHistoryTour, tourBatch } from '../utils'
 
 /* 行程來源：旅行社 CRM／行程建立系統 API 同步
    本系統不自行產生行程，僅接收 行程(旅遊地點) + 團編 + 團員 資料。
@@ -21,8 +24,8 @@ interface RowProps {
   isHist: boolean
   onRoster: () => void
   onEdit: () => void
-  onPublish: () => void
-  onDelete: () => void
+  onPublish: () => unknown
+  onDelete: () => unknown
 }
 
 function TourRow({ t, q, isHist, onRoster, onEdit, onPublish, onDelete }: RowProps) {
@@ -33,7 +36,7 @@ function TourRow({ t, q, isHist, onRoster, onEdit, onPublish, onDelete }: RowPro
       <td>
         <div className="tour-batch" style={{ fontSize: 11 }}><Hl text={tourBatch(t)} q={q} /></div>
         <div className="t-title"><Hl text={t.title} q={q} /></div>
-        <div className="t-sub"><Hl text={t.dest} q={q} /> · <Hl text={t.dates_text} q={q} /> · 團員 {rosterOf(t).length} 位</div>
+        <div className="t-sub"><Hl text={t.dest} q={q} /> · <Hl text={t.dates_text} q={q} /> · 團員 {t.member_count ?? 0} 位</div>
       </td>
       <td className="t-sub">
         {needsGuide
@@ -45,7 +48,7 @@ function TourRow({ t, q, isHist, onRoster, onEdit, onPublish, onDelete }: RowPro
       <td>
         <div className="dt-acts">
           <button onClick={onRoster} title="團員名冊"><Icon name="users" /></button>
-          {!isHist && !t.published && <button className="pub" onClick={onPublish} title="發佈給團員"><Icon name="send" /></button>}
+          {!isHist && !t.published && <AsyncButton className="pub" onClick={onPublish} title="發佈給團員"><Icon name="send" /></AsyncButton>}
           <button onClick={onEdit} title="修改"><Icon name="edit" /></button>
           {!isHist && <button className="del" onClick={onDelete} title="刪除"><Icon name="trash" /></button>}
         </div>
@@ -65,8 +68,11 @@ function TourTable({ children }: { children: React.ReactNode }) {
   )
 }
 
+/* 開啟時向後端取得名冊（含預設登入帳密） */
 function RosterModal({ tour, onClose }: { tour: Tour; onClose: () => void }) {
-  const list = rosterOf(tour)
+  const roster = useRoster(tour.id)
+  if (!roster.data) return <Modal onClose={onClose} title="團員名冊" sub={tourBatch(tour)}><QueryState queries={[roster]}>{() => null}</QueryState></Modal>
+  const list = roster.data
   return (
     <Modal onClose={onClose} title="團員名冊" sub={`${tourBatch(tour)} · ${list.length} 位團員`}>
       <div className="data-note"><Icon name="key" />帳號預設為 email；密碼預設為電話，無電話者由系統自訂</div>
@@ -88,7 +94,8 @@ function RosterModal({ tour, onClose }: { tour: Tour; onClose: () => void }) {
 }
 
 function TourModal({ tour, onClose }: { tour: Tour | null; onClose: () => void }) {
-  const { data, create, update, toast } = useAdmin()
+  const data = useAdminData('users', 'places').data!
+  const { create, update } = useCrud()
   const [title, setTitle] = useState(tour?.title || '')
   const [dest, setDest] = useState(tour?.dest || '')
   const [dates, setDates] = useState(tour?.dates_text || '')
@@ -107,24 +114,25 @@ function TourModal({ tour, onClose }: { tour: Tour | null; onClose: () => void }
     setPlaceSel('')
   }
 
-  function save() {
+  async function save() {
     if (!title.trim()) return toast('請輸入行程名稱', 'alert-circle')
     const guide_id = guideId || null
     const rec = {
       title: title.trim(), dest: dest.trim(), country: (dest.split(',').pop() || '').trim(), dates_text: dates.trim(),
       guide_id, guide_name: guides.find((g) => g.id === guide_id)?.full_name || '', places,
     }
-    onClose()
+    let saved: Tour | undefined
     if (tour) {
       const status = computeTourStatus({ ...tour, ...rec })
       const wasPreparing = tour.status === 'preparing'
-      update('tours', tour.id, { ...rec, status },
+      saved = await update('tours', tour.id, { ...rec, status },
         wasPreparing && guide_id ? '已指派領隊導遊，狀態更新為「即將出發」' : '行程已儲存',
         wasPreparing && guide_id ? 'user-check' : undefined)
     } else {
-      const t: Tour = { id: uid('t'), img_url: IMG.kyoto, published: false, source: '手動', batch_seq: 1, status: 'preparing', ...rec }
-      create('tours', { ...t, status: computeTourStatus(t) }, '行程已儲存')
+      const t: Omit<Tour, 'id'> = { published: false, source: '手動', batch_seq: 1, status: 'preparing', ...rec }
+      saved = await create('tours', { ...t, status: computeTourStatus({ ...t, id: '' }) }, '行程已儲存')
     }
+    if (saved) onClose()
   }
 
   return (
@@ -168,13 +176,13 @@ function TourModal({ tour, onClose }: { tour: Tour | null; onClose: () => void }
             )
           }) : <p className="hint">尚未選擇旅遊地點</p>}
         </Field>
-        <button className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存行程</button>
+        <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存行程</AsyncButton>
       </Modal>
 
       {souvPlace && (
         <SouvPicker
           title={souvPlace.name} initial={souvPlace.souvenirs.map((s) => s.pid)} onClose={() => setSouvOf(null)}
-          onApply={(chosen) => { update('places', souvPlace.id, { souvenirs: chosen }, `已串聯 ${chosen.length} 項紀念商品`, 'gift'); setSouvOf(null) }}
+          onApply={async (chosen) => { if (await update('places', souvPlace.id, { souvenirs: chosen }, `已串聯 ${chosen.length} 項紀念商品`, 'gift')) setSouvOf(null) }}
         />
       )}
     </>
@@ -182,7 +190,13 @@ function TourModal({ tour, onClose }: { tour: Tour | null; onClose: () => void }
 }
 
 export default function Tours() {
-  const { data, update, remove, toast } = useAdmin()
+  const { queries, data } = useAdminData('tours', 'users', 'places', 'products')
+  return <QueryState queries={queries}>{() => <ToursView data={data!} />}</QueryState>
+}
+
+function ToursView({ data }: { data: Pick<AdminData, 'tours' | 'users' | 'places' | 'products'> }) {
+  const { update, remove } = useCrud()
+  const qc = useQueryClient()
   const [q, setQ] = useState('')
   const [histQ, setHistQ] = useState('')
   const [status, setStatus] = useState<TourStatus | 'all'>('all')
@@ -199,21 +213,27 @@ export default function Tours() {
   const histList = history.filter((t) => tourMatch(t, histQ))
   const histBad = history.filter((t) => t.status !== 'completed').length
 
-  /* 示範；實務由後端定時拉取 CRM API → upsert tours / tour_members / users */
-  function syncFromCRM() {
-    setLastSync(new Date().toLocaleString('zh-TW', { hour12: false }))
-    toast('已與 CRM 同步行程／團編／團員', 'refresh')
+  /* 後端向旅行社 CRM 拉取行程 / 團編 / 團員，回傳最新行程 */
+  async function syncFromCRM() {
+    try {
+      const res = await toursApi.syncCrm()
+      qc.setQueryData(adminKeys.list('tours'), res.tours)
+      setLastSync(res.syncedAt)
+      toast('已與 CRM 同步行程／團編／團員', 'refresh')
+    } catch (e) {
+      toast('同步失敗：' + errMsg(e), 'cloud-off')
+    }
   }
 
   /* 發佈後團員端才看得到該行程 */
   function publish(t: Tour) {
     if (!t.guide_id) return toast('請先於「修改」中指派領隊導遊', 'alert-circle')
-    const n = rosterOf(t).length
-    update('tours', t.id, { published: true }, `已發佈「${t.title}」給團員${n ? `（${n} 位）` : ''}`, 'send')
+    const n = t.member_count ?? 0
+    return update('tours', t.id, { published: true }, `已發佈「${t.title}」給團員${n ? `（${n} 位）` : ''}`, 'send')
   }
 
   function del(t: Tour) {
-    if (confirm('確定刪除此行程？')) remove('tours', t.id, '已刪除')
+    return confirmDialog({ title: '刪除行程？', message: `「${t.title}」將被刪除。`, confirmLabel: '刪除', danger: true, onConfirm: () => remove('tours', t.id, '已刪除') })
   }
 
   const row = (t: Tour, isHist: boolean) => (
@@ -226,14 +246,14 @@ export default function Tours() {
   return (
     <div className="pad">
       <PageHead icon="map-2" title="行程管理">
-        <button className="btn btn-primary" onClick={syncFromCRM}><Icon name="cloud-download" />立即同步 CRM</button>
+        <AsyncButton className="btn btn-primary" onClick={syncFromCRM}><Icon name="cloud-download" />立即同步 CRM</AsyncButton>
       </PageHead>
       <p className="page-desc">行程來源為旅行社 CRM／行程建立系統，經 API 同步取得</p>
 
       <div className="sync-bar">
         <div className="sync-info"><Icon name="refresh" /><div>
           <b>CRM 資料同步</b><span>{lastSync ? '最近同步：' + lastSync : '資料由 CRM 定時同步（示範資料）'}</span></div></div>
-        <button className="btn btn-primary btn-sm" onClick={syncFromCRM}><Icon name="cloud-download" />立即同步</button>
+        <AsyncButton className="btn btn-primary btn-sm" onClick={syncFromCRM}><Icon name="cloud-download" />立即同步</AsyncButton>
       </div>
 
       <div className="toolbar">

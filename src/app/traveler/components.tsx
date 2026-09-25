@@ -1,9 +1,9 @@
 import qrcode from 'qrcode-generator'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Empty, Field, Icon, Modal, Tabs, toast, type IconName } from '../../components'
+import { AsyncButton, Empty, Field, Icon, type IconName, Modal, QueryState, Tabs, toast, useBusy } from '../../components'
 import { fmt } from '../../lib/utils'
-import { useTraveler } from './store'
+import { useAlbum, useCreateReview, useFavoritePhoto, usePublishMemory, useUploadToAlbum } from './queries'
 import type { AlbumPhoto, Boutique, CatalogTour, GroupBuyItem, Notice } from '../../api/types/traveler'
 
 export function Screen({ children }: { children: ReactNode }) {
@@ -87,7 +87,7 @@ export function BoutiqueCard({ b }: { b: Boutique }) {
       <div className="gb-info">
         <h4>{b.name}</h4><div className="desc">{b.desc}</div>
         <div className="gb-price"><b>NT$ {fmt(b.price)}</b></div>
-        <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => toast('開啟外接購物系統：' + b.name, 'external-link')}>
+        <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => window.open(b.url, '_blank', 'noopener')}>
           <Icon name="external-link" />前往購買
         </button>
       </div>
@@ -116,15 +116,29 @@ export function CatalogCard({ t }: { t: CatalogTour }) {
 
 /* ── 團員相簿 + 燈箱 ── */
 function Lightbox({ photo, onClose }: { photo: AlbumPhoto; onClose: () => void }) {
+  const album = useAlbum()
+  const fav = useFavoritePhoto()
+  const favorite = !!album.data?.find((p) => p.id === photo.id)?.favorite
+
+  async function favorite_() {
+    if (favorite) return toast('已在收藏中', 'heart')
+    await fav.mutateAsync(photo.id)
+    toast('已加入收藏', 'heart')
+  }
+
+  async function share() {
+    try { await navigator.clipboard.writeText(photo.src); toast('分享連結已複製', 'share') } catch { toast('無法複製連結', 'alert-circle') }
+  }
+
   return (
     <div className="lightbox open" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <button className="lb-close" onClick={onClose} aria-label="關閉"><Icon name="x" /></button>
       <img src={photo.src} alt={photo.cap} />
       <div className="lb-info"><div className="cap">{photo.cap}</div><div className="up">由 {photo.up} 上傳</div></div>
       <div className="lb-actions">
-        <button onClick={() => toast('已加入收藏')} aria-label="收藏"><Icon name="heart" /></button>
-        <button onClick={() => toast('開始下載…')} aria-label="下載"><Icon name="download" /></button>
-        <button onClick={() => toast('分享連結已複製')} aria-label="分享"><Icon name="share" /></button>
+        <AsyncButton onClick={favorite_} aria-label="收藏"><Icon name={favorite ? 'heart-filled' : 'heart'} /></AsyncButton>
+        <a href={photo.src} download target="_blank" rel="noopener" aria-label="下載"><Icon name="download" /></a>
+        <button onClick={share} aria-label="分享"><Icon name="share" /></button>
       </div>
     </div>
   )
@@ -147,23 +161,29 @@ export function PhotoGrid({ photos, className = '' }: { photos: AlbumPhoto[]; cl
 type AlbumTab = 'all' | 'guide' | 'mine'
 
 export function AlbumModal({ name, onClose }: { name: string; onClose: () => void }) {
-  const { data, commit } = useTraveler()
+  const album = useAlbum()
+  const uploadToAlbum = useUploadToAlbum(name)
   const [tab, setTab] = useState<AlbumTab>('all')
   const fileRef = useRef<HTMLInputElement>(null)
-  const list = tab === 'all' ? data.album : data.album.filter((p) => p.by === tab)
+  const [uploading, run] = useBusy()
+  const list = (album.data ?? []).filter((p) => tab === 'all' || p.by === tab)
 
   function upload(files: File[]) {
-    if (files.length) commit(() => {}, { type: 'uploadAlbum', album: name, files }, `已上傳 ${files.length} 張照片`)
+    if (!files.length) return
+    void run(async () => {
+      const r = await uploadToAlbum.mutateAsync(files).catch(() => undefined)
+      if (r) toast(`已上傳 ${r.count} 張照片`)
+    })
   }
 
   return (
     <Modal onClose={onClose} title="團員相簿" sub={name}>
       <div className="alert info show"><Icon name="users" /><span>僅限同團成員查看與分享</span></div>
       <Tabs<AlbumTab> value={tab} onChange={setTab} tabs={[['all', '全部'], ['guide', '導遊上傳'], ['mine', '我的照片']]} />
-      {list.length
+      <QueryState queries={[album]}>{() => list.length
         ? <PhotoGrid photos={list} className="bleed" />
-        : <Empty icon="photo-off" text="尚無照片" hint={tab === 'mine' ? '上傳您的旅遊回憶吧！' : '導遊尚未上傳照片'} />}
-      <button className="btn btn-ghost btn-block" style={{ marginTop: '1rem' }} onClick={() => fileRef.current?.click()}><Icon name="camera-plus" />上傳照片</button>
+        : <Empty icon="photo-off" text="尚無照片" hint={tab === 'mine' ? '上傳您的旅遊回憶吧！' : '導遊尚未上傳照片'} />}</QueryState>
+      <button className="btn btn-ghost btn-block" style={{ marginTop: '1rem' }} disabled={uploading} aria-busy={uploading || undefined} onClick={() => fileRef.current?.click()}><Icon name="camera-plus" />{uploading ? '上傳中…' : '上傳照片'}</button>
       <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { upload([...(e.target.files || [])]); e.target.value = '' }} />
     </Modal>
   )
@@ -207,8 +227,8 @@ export function MapModal({ place, onClose }: { place: string; onClose: () => voi
 }
 
 /* ── 撰寫評價 ── */
-export function ReviewModal({ tourTitle, onClose }: { tourTitle: string; onClose: () => void }) {
-  const { commit } = useTraveler()
+export function ReviewModal({ tourId, tourTitle, onClose }: { tourId: string; tourTitle: string; onClose: () => void }) {
+  const createReview = useCreateReview()
   const [rating, setRating] = useState(0)
   const [hover, setHover] = useState(0)
   const [title, setTitle] = useState('')
@@ -217,15 +237,13 @@ export function ReviewModal({ tourTitle, onClose }: { tourTitle: string; onClose
   const [anonymous, setAnonymous] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  function submit() {
+  async function submit() {
     if (!rating) return toast('請選擇評分', 'alert-circle')
     if (!title.trim()) return toast('請填寫評價標題', 'alert-circle')
     if (!content.trim()) return toast('請填寫詳細評價', 'alert-circle')
+    await createReview.mutateAsync({ tourId, rating, title: title.trim(), content: content.trim(), anonymous, photos })
+    toast('感謝您的評價！')
     onClose()
-    commit((d) => {
-      const t = d.completed.find((x) => x.title === tourTitle)
-      if (t) { t.reviewed = true; t.rating = rating }
-    }, { type: 'review', tourTitle, rating, title: title.trim(), content: content.trim(), anonymous, photos }, '感謝您的評價！')
   }
 
   const shown = hover || rating
@@ -250,25 +268,23 @@ export function ReviewModal({ tourTitle, onClose }: { tourTitle: string; onClose
         {photos.length > 0 && <p className="hint">已選擇 {photos.length} 張照片</p>}
       </Field>
       <label className="check-line start"><input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} /><span>匿名評價</span></label>
-      <button className="btn btn-primary btn-block btn-lg" onClick={submit}><Icon name="send" />提交評價</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={submit}><Icon name="send" />提交評價</AsyncButton>
     </Modal>
   )
 }
 
 /* ── 我的旅遊回憶 ── */
-export function MemoryModal({ tourTitle, onClose }: { tourTitle: string; onClose: () => void }) {
-  const { commit } = useTraveler()
+export function MemoryModal({ tourId, tourTitle, onClose }: { tourId: string; tourTitle: string; onClose: () => void }) {
+  const publishMemory = usePublishMemory()
   const [files, setFiles] = useState<File[]>([])
   const [caption, setCaption] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  function publish() {
+  async function publish() {
     if (!files.length) return toast('請至少選擇一張照片', 'alert-circle')
+    await publishMemory.mutateAsync({ tourId, files, caption: caption.trim() })
+    toast('旅遊回憶已發佈 🎉')
     onClose()
-    commit((d) => {
-      const t = d.completed.find((x) => x.title === tourTitle)
-      if (t) t.memories += files.length
-    }, { type: 'publishMemory', tourTitle, files, caption: caption.trim() }, '旅遊回憶已發佈 🎉')
   }
 
   return (
@@ -281,7 +297,7 @@ export function MemoryModal({ tourTitle, onClose }: { tourTitle: string; onClose
         {files.length > 0 && <p className="hint">已選擇 {files.length} 張照片</p>}
       </Field>
       <Field label="照片說明"><textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="寫下這趟旅程的回憶…" /></Field>
-      <button className="btn btn-primary btn-block btn-lg" onClick={publish}><Icon name="send" />發佈回憶</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={publish}><Icon name="send" />發佈回憶</AsyncButton>
     </Modal>
   )
 }

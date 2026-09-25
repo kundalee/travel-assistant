@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import SouvPicker from '../components/SouvPicker'
-import { Empty, Field, Icon, MapEmbed, Modal, PageHead } from '../../../components'
-import { useAdmin } from '../store'
+import { AsyncButton, confirmDialog, Empty, Field, Icon, MapEmbed, Modal, PageHead, QueryState, toast } from '../../../components'
+import { useQueryClient } from '@tanstack/react-query'
+import { adminKeys, useAdminData, useCrud } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { Place, Souvenir } from '../../../api/types/admin'
-import { fmt, parseCoord, uid } from '../utils'
+import { fmt, parseCoord } from '../utils'
 
 function PlaceModal({ place, onClose }: { place: Place | null; onClose: () => void }) {
-  const { create, update, toast } = useAdmin()
+  const { create, update } = useCrud()
   const [name, setName] = useState(place?.name || '')
   const [coord, setCoord] = useState(place ? `${place.lat}, ${place.lng}` : '')
   const [desc, setDesc] = useState(place?.desc || '')
@@ -14,13 +16,12 @@ function PlaceModal({ place, onClose }: { place: Place | null; onClose: () => vo
   const [picking, setPicking] = useState(false)
   const c = parseCoord(coord)
 
-  function save() {
+  async function save() {
     if (!name.trim()) return toast('請輸入地點名稱', 'alert-circle')
     if (!c) return toast('請貼上有效的座標（緯度, 經度）', 'alert-circle')
     const rec = { name: name.trim(), lat: c.lat, lng: c.lng, desc: desc.trim(), souvenirs }
-    onClose()
-    if (place) update('places', place.id, rec, '旅遊地點已儲存', 'map-pin-check')
-    else create('places', { id: uid('pl'), ...rec }, '旅遊地點已儲存', 'map-pin-check')
+    const saved = place ? await update('places', place.id, rec, '旅遊地點已儲存', 'map-pin-check') : await create('places', rec, '旅遊地點已儲存', 'map-pin-check')
+    if (saved) onClose()
   }
 
   return (
@@ -47,7 +48,7 @@ function PlaceModal({ place, onClose }: { place: Place | null; onClose: () => vo
         </button>
 
         {c && <div style={{ marginBottom: '0.9rem' }}><MapEmbed lat={c.lat} lng={c.lng} /></div>}
-        <button className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存地點</button>
+        <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存地點</AsyncButton>
       </Modal>
 
       {picking && (
@@ -61,14 +62,26 @@ function PlaceModal({ place, onClose }: { place: Place | null; onClose: () => vo
 }
 
 export default function Places() {
-  const { data, update, remove, patch } = useAdmin()
+  const { queries, data } = useAdminData('places', 'products')
+  return <QueryState queries={queries}>{() => <PlacesView data={data!} />}</QueryState>
+}
+
+function PlacesView({ data }: { data: Pick<AdminData, 'places' | 'products'> }) {
+  const { update, remove } = useCrud()
+  const qc = useQueryClient()
   const [editing, setEditing] = useState<Place | 'new' | null>(null)
   const [souvOf, setSouvOf] = useState<Place | null>(null)
 
+  /* 刪除成功後，後端已自行程移除此地點，畫面同步 */
   function del(p: Place) {
-    if (!confirm('確定刪除此地點？（相關紀念商品一併移除）')) return
-    remove('places', p.id, '已刪除地點')
-    patch('tours', (l) => l.map((t) => (t.places?.includes(p.id) ? { ...t, places: t.places.filter((x) => x !== p.id) } : t)))
+    return confirmDialog({
+      title: '刪除旅遊地點？', message: `「${p.name}」將被刪除，並自所有行程移除（相關紀念商品一併移除）。`, confirmLabel: '刪除', danger: true,
+      onConfirm: async () => {
+        if (!(await remove('places', p.id, '已刪除地點'))) return
+        /* 後端已自各行程移除此地點 → 重新讀取行程 */
+        void qc.invalidateQueries({ queryKey: adminKeys.list('tours') })
+      },
+    })
   }
 
   return (
@@ -95,7 +108,7 @@ export default function Places() {
       {souvOf && (
         <SouvPicker
           title={souvOf.name} initial={souvOf.souvenirs.map((s) => s.pid)} onClose={() => setSouvOf(null)}
-          onApply={(chosen) => { update('places', souvOf.id, { souvenirs: chosen }, `已串聯 ${chosen.length} 項紀念商品`, 'gift'); setSouvOf(null) }}
+          onApply={async (chosen) => { if (await update('places', souvOf.id, { souvenirs: chosen }, `已串聯 ${chosen.length} 項紀念商品`, 'gift')) setSouvOf(null) }}
         />
       )}
     </div>

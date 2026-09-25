@@ -1,24 +1,47 @@
 import { useState } from 'react'
-import { Icon, MapEmbed, PageHead, Tabs } from '../../../components'
-import { VITALS, ZONES } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { AsyncButton, Icon, MapEmbed, PageHead, QueryState, Tabs, toast } from '../../../components'
+import { trackingApi } from '../../../api/admin'
+import { useQueryClient } from '@tanstack/react-query'
+import { adminKeys, useAdminData } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
+import { errMsg } from '../utils'
 
 type Tab = 'groups' | 'vitals' | 'zones'
 
 export default function Tracking() {
-  const { data, patch, toast } = useAdmin()
+  const { queries, data } = useAdminData('trackingGroups', 'vitals', 'zones')
+  return <QueryState queries={queries}>{() => <TrackingView data={data!} />}</QueryState>
+}
+
+function TrackingView({ data }: { data: Pick<AdminData, 'trackingGroups' | 'vitals' | 'zones'> }) {
+  const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('groups')
   const [idx, setIdx] = useState(0)
   const groups = data.trackingGroups
   const g = groups[idx] || groups[0]
 
-  /* 示範；實務由領隊公司手機定期回傳 GPS 至後端 */
-  function refreshLoc() {
+  const VITALS = data.vitals
+  const ZONES = data.zones
+
+  /* 向後端取得領隊公司手機的最新定位 */
+  async function refreshLoc() {
     if (!g) return
-    patch('trackingGroups', (l) => l.map((x, i) => (i === idx
-      ? { ...x, lat: x.lat + (Math.random() - 0.5) * 0.004, lng: x.lng + (Math.random() - 0.5) * 0.004, updated: '剛剛' }
-      : x)))
-    toast(`已更新 ${g.guide} 的手機定位`, 'current-location')
+    try {
+      const updated = await trackingApi.location({ groupId: g.id })
+      qc.setQueryData<Awaited<ReturnType<typeof trackingApi.get>>>(adminKeys.tracking, (d) => d && { ...d, groups: d.groups.map((x) => (x.id === updated.id ? updated : x)) })
+      toast(`已更新 ${g.guide} 的手機定位`, 'current-location')
+    } catch (e) {
+      toast('定位更新失敗：' + errMsg(e), 'alert-circle')
+    }
+  }
+
+  async function exportTocc() {
+    try {
+      const r = await trackingApi.exportTocc()
+      toast(`已匯出 TOCC 資料 ${r.rows} 筆（${r.filename}）`, 'file-export')
+    } catch (e) {
+      toast('匯出失敗：' + errMsg(e), 'alert-circle')
+    }
   }
 
   return (
@@ -32,7 +55,7 @@ export default function Tracking() {
             <select className="filt" style={{ flex: 1 }} value={idx} onChange={(e) => setIdx(Number(e.target.value))}>
               {groups.map((x, i) => <option key={x.tour} value={i}>{x.tour}</option>)}
             </select>
-            <button className="btn btn-ghost btn-sm" onClick={refreshLoc}><Icon name="refresh" />更新定位</button>
+            <AsyncButton className="btn btn-ghost btn-sm" onClick={refreshLoc}><Icon name="refresh" />更新定位</AsyncButton>
           </div>
           {g && (
             <div className="crud-card">
@@ -48,7 +71,7 @@ export default function Tracking() {
               <div className="crud-meta" style={{ marginTop: 10 }}><Icon name="clock" />最後回報：{g.updated} · {g.members} 位團員 · {g.continent} / {g.city}</div>
               <div className="crud-acts">
                 <a className="oact" href={`https://www.google.com/maps?q=${g.lat},${g.lng}`} target="_blank" rel="noopener"><Icon name="external-link" />在 Google 地圖開啟</a>
-                <button className="oact" onClick={() => toast('已匯出 TOCC 格式資料', 'file-export')}><Icon name="file-export" />匯出 TOCC</button>
+                <AsyncButton className="oact" onClick={exportTocc}><Icon name="file-export" />匯出 TOCC</AsyncButton>
               </div>
             </div>
           )}

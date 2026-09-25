@@ -1,5 +1,5 @@
 /* ═══════ 常數與範例資料（未連線 / 展示模式使用）═══════ */
-import type { AdminData, AnnCat, ProductKind, Role, RosterMember, TourStatus } from '../types/admin'
+import type { AdminCollections, AnnCat, Receivable, Stats, Vital, Zone, ProductKind, Role, RosterMember, TourStatus } from '../types/admin'
 
 export const DEMO = { email: 'admin@example.com', pw: 'admin1234' }
 
@@ -33,7 +33,7 @@ export const V_SHIP = ['店面', '指定地點'] /* 交貨方式 — 單選 */
 
 export const ANN_TYPES: Record<AnnCat, string[]> = { 每日公告: ['晨喚', '集合時間與地點', '行程概述'], 一般公告: ['注意事項', '旅行社公告'] }
 
-export const SAMPLE: AdminData = {
+export const SAMPLE: AdminCollections = {
   users: [
     { id: 'u1', full_name: '王大明', email: 'guide@a.com', roles: ['guide', 'traveler'], phone: '0912-345-678', avatar_url: IMG.a2, status: 'on' },
     { id: 'u2', full_name: '林小美', email: 'trav1@a.com', roles: ['traveler'], phone: '0922-111-222', avatar_url: IMG.a1, status: 'on' },
@@ -110,12 +110,12 @@ export const SAMPLE: AdminData = {
     { month: '2026/05', agency: '範例旅行社', amount: 733200, sent: true },
   ],
   trackingGroups: [
-    { tour: '京都文化深度六日', city: '京都', continent: '亞洲', dates: '2026/06/30 - 07/05', members: 24, alert: 0, guide: '王大明', guidePhone: '0912-345-678', lat: 34.994856, lng: 135.785046, spot: '清水寺 · 二年坂', updated: '3 分鐘前' },
-    { tour: '日本東京五日遊', city: '東京', continent: '亞洲', dates: '2026/07/15 - 07/19', members: 22, alert: 0, guide: '王大明', guidePhone: '0912-345-678', lat: 35.714765, lng: 139.796655, spot: '淺草寺 · 雷門', updated: '12 分鐘前' },
+    { id: 'tg1', tour: '京都文化深度六日', city: '京都', continent: '亞洲', dates: '2026/06/30 - 07/05', members: 24, alert: 0, guide: '王大明', guidePhone: '0912-345-678', lat: 34.994856, lng: 135.785046, spot: '清水寺 · 二年坂', updated: '3 分鐘前' },
+    { id: 'tg2', tour: '日本東京五日遊', city: '東京', continent: '亞洲', dates: '2026/07/15 - 07/19', members: 22, alert: 0, guide: '王大明', guidePhone: '0912-345-678', lat: 35.714765, lng: 139.796655, spot: '淺草寺 · 雷門', updated: '12 分鐘前' },
   ],
 }
 
-export const STATS = {
+export const STATS: Stats = {
   members: [
     { tour: '京都文化深度六日', n: 24, guide: '王大明' },
     { tour: '日本東京五日遊', n: 22, guide: '王大明' },
@@ -131,16 +131,16 @@ export const STATS = {
   ],
 }
 
-export const VITALS = [
+export const VITALS: Vital[] = [
   { name: '林小美', temp: 36.6, bp: '118/76', ok: true },
   { name: '陳志豪', temp: 37.8, bp: '132/85', ok: false },
   { name: '黃雅婷', temp: 36.4, bp: '110/70', ok: true },
 ]
-export const ZONES = [
+export const ZONES: Zone[] = [
   { name: '同疊旅團', note: '清水寺 09:20-10:05 · 2 團重疊', level: 'warn' },
   { name: '安全旅團', note: '嵐山 · 無警戒區域重疊', level: 'ok' },
 ]
-export const RECEIVABLE = [
+export const RECEIVABLE: Receivable[] = [
   { party: '京都物產店', type: '應付', amount: 64800, due: '2026/07/20', done: false },
   { party: '範例旅行社', type: '應收', amount: 158400, due: '2026/07/15', done: true },
   { party: '黑貓宅急便', type: '應付', amount: 12400, due: '2026/07/25', done: false },

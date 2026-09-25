@@ -1,14 +1,11 @@
 import { useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import {
-  addLine, CartBar, cartCount, CartModal, cartTotal, changeLineQty, Empty, Field, Icon, LocationAccordion, Modal, StatusGroups, toast,
-  type CartLine,
-} from '../../../components'
+import { addLine, AsyncButton, CartBar, cartCount, type CartLine, CartModal, cartTotal, changeLineQty, Empty, Field, Icon, LocationAccordion, Modal, QueryState, StatusGroups, toast, useBusy } from '../../../components'
 import { ostatusClass, type OrderStatus } from '../../../lib/orders'
-import { fmt, uid } from '../../../lib/utils'
+import { fmt } from '../../../lib/utils'
 import { AlbumModal, PhotoGrid, RadioCards, SubHead } from '../components'
-import { CCY, PAY_META } from '../../../api/mocks/traveler'
-import { useTraveler } from '../store'
+import { PAY_META } from '../../../api/mocks/traveler'
+import { useAlbum, usePlaceOrder, useSharePhotos, useTripOrderActions, useTrips } from '../queries'
 import type { Fulfillment, OngoingTrip, PayMethod, TripOrder } from '../../../api/types/traveler'
 
 type OgTab = 'plan' | 'photo' | 'buy'
@@ -25,30 +22,25 @@ const SHIP_OPTIONS: { key: Fulfillment; icon: 'map-pin' | 'truck'; title: string
   { key: 'ship', icon: 'truck', title: '宅配回台灣', desc: '回國後宅配到府' },
 ]
 
-/* 目的地國家的當地幣別（台灣或未知則不顯示） */
-const localCcy = (trip: OngoingTrip) => CCY[(trip.dest.split(',').pop() || '').trim()] || null
-
 function CheckoutModal({ trip, cart, onDone, onClose }: { trip: OngoingTrip; cart: CartLine[]; onDone: () => void; onClose: () => void }) {
-  const { commit } = useTraveler()
+  const placeOrder = usePlaceOrder(trip.tourId)
   const [pay, setPay] = useState<PayMethod>('card')
   const [ship, setShip] = useState<Fulfillment>('pickup')
   const twd = cartTotal(cart)
-  const lc = localCcy(trip)
+  const lc = trip.currency
   const kind = PAY_META[pay].kind
   const payNote = { instant: '線上付款成功後，訂單即轉為「已付款」。', deferred: '取得繳費資訊後請於期限內繳費，入帳後轉為「已付款」。', onsite: '訂單先保留為「未付款」，集合時由領隊現場收款並勾稽。' }[kind]
   const shipNote = ship === 'pickup' ? '由領隊於集結地點交付。' : '回國後宅配至台灣府上（可能另有運費／關稅）。'
   const submitLabel = kind === 'instant' ? `確認付款 NT$ ${fmt(twd)}` : kind === 'deferred' ? '取得繳費資訊' : '送出訂單（現場付款）'
 
-  function place() {
-    const status: OrderStatus = kind === 'instant' ? '已付款' : '未付款'
-    const orders: TripOrder[] = cart.map((c) => ({
-      id: uid('o') + c.id, product: c.name, qty: c.qty, amount: c.price * c.qty, status, method: pay, fulfillment: ship,
-      local: lc ? { code: lc.code, sym: lc.sym, amount: Math.round(c.price * c.qty * lc.per) } : undefined,
-    }))
-    const msg = { instant: `付款成功，已完成 ${cartCount(cart)} 件訂單`, deferred: '已產生繳費資訊，請於期限內繳費', onsite: '訂單已送出，集合時由領隊收款' }[kind]
+  async function place() {
+    const n = cartCount(cart)
+    const r = await placeOrder.mutateAsync({ items: cart.map(({ id, qty }) => ({ id, qty })), method: pay, fulfillment: ship })
+    toast(r.payment?.type === 'cvs' ? `已產生超商繳費代碼 ${r.payment.code}，請於期限內繳費`
+      : r.payment?.type === 'atm' ? `請轉帳至 ${r.payment.bank} 虛擬帳號 ${r.payment.account}`
+      : kind === 'instant' ? `付款成功，已完成 ${n} 件訂單` : '訂單已送出，集合時由領隊收款',
+    kind === 'instant' ? 'circle-check' : 'clock')
     onDone()
-    commit((d) => { d.ongoing.find((t) => t.tourId === trip.tourId)!.orders.push(...orders) },
-      { type: 'placeOrder', tourId: trip.tourId, orders, method: pay, fulfillment: ship }, msg, kind === 'instant' ? 'circle-check' : 'clock')
   }
 
   return (
@@ -62,13 +54,13 @@ function CheckoutModal({ trip, cart, onDone, onClose }: { trip: OngoingTrip; car
         {lc && <div className="co-line"><span>當地幣別參考</span><span className="co-local">約 {lc.sym}{fmt(Math.round(twd * lc.per))} {lc.code}</span></div>}
         <div className="co-note"><Icon name="info-circle" /><span>{payNote}<br />{shipNote}</span></div>
       </div>
-      <button className="btn btn-primary btn-block btn-lg" style={{ marginTop: '0.9rem' }} onClick={place}><Icon name="check" />{submitLabel}</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" style={{ marginTop: '0.9rem' }} onClick={place}><Icon name="check" />{submitLabel}</AsyncButton>
       <p className="hint" style={{ textAlign: 'center', marginTop: '0.75rem' }}>金額以新台幣結算；當地幣別金額僅供參考。此為流程展示，未進行實際扣款。</p>
     </Modal>
   )
 }
 
-function QtyModal({ order, onSave, onClose }: { order: TripOrder; onSave: (qty: number) => void; onClose: () => void }) {
+function QtyModal({ order, onSave, onClose }: { order: TripOrder; onSave: (qty: number) => Promise<unknown>; onClose: () => void }) {
   const [qty, setQty] = useState(order.qty)
   return (
     <Modal center onClose={onClose} title="修改數量" sub={order.product}>
@@ -78,24 +70,30 @@ function QtyModal({ order, onSave, onClose }: { order: TripOrder; onSave: (qty: 
           <button onClick={() => setQty((q) => q + 1)} aria-label="增加"><Icon name="plus" /></button>
         </div>
       </Field>
-      <button className="btn btn-primary btn-block" onClick={() => onSave(qty)}><Icon name="check" />更新</button>
+      <AsyncButton className="btn btn-primary btn-block" onClick={() => onSave(qty)}><Icon name="check" />更新</AsyncButton>
     </Modal>
   )
 }
 
 function PhotoPane({ trip }: { trip: OngoingTrip }) {
-  const { data, commit } = useTraveler()
+  const albumQ = useAlbum()
+  const sharePhotos = useSharePhotos(trip.tourId)
   const [album, setAlbum] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, runUpload] = useBusy()
   function share(files: File[]) {
-    if (files.length) commit(() => {}, { type: 'sharePhotos', tourId: trip.tourId, files }, `已發佈 ${files.length} 張照片給領隊與團員`)
+    if (!files.length) return
+    void runUpload(async () => {
+      const r = await sharePhotos.mutateAsync(files).catch(() => undefined)
+      if (r) toast(`已發佈 ${r.count} 張照片給領隊與團員`)
+    })
   }
   return (
     <>
       <div className="share-card">
         <div className="share-ico accent-soft"><Icon name="upload" /></div>
         <div className="share-txt"><h4>分享給導遊領隊</h4><p>選擇您拍攝的照片，發佈給領隊與團員</p></div>
-        <button className="btn btn-primary btn-sm" onClick={() => fileRef.current?.click()}>選擇照片與發佈</button>
+        <button className="btn btn-primary btn-sm" disabled={uploading} aria-busy={uploading || undefined} onClick={() => fileRef.current?.click()}>{uploading ? '發佈中…' : '選擇照片與發佈'}</button>
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { share([...(e.target.files || [])]); e.target.value = '' }} />
       </div>
       <div className="share-card">
@@ -104,25 +102,25 @@ function PhotoPane({ trip }: { trip: OngoingTrip }) {
         <button className="btn btn-ghost btn-sm" onClick={() => setAlbum(true)}>選擇照片與下載</button>
       </div>
       <div className="section-title sm" style={{ marginTop: '1.25rem' }}><Icon name="photo" />當團最新照片</div>
-      <PhotoGrid photos={data.album.slice(0, 6)} className="rounded" />
+      <QueryState queries={[albumQ]}>{() => <PhotoGrid photos={albumQ.data!.slice(0, 6)} className="rounded" />}</QueryState>
       {album && <AlbumModal name={trip.title} onClose={() => setAlbum(false)} />}
     </>
   )
 }
 
 function BuyPane({ trip }: { trip: OngoingTrip }) {
-  const { commit } = useTraveler()
+  const actions = useTripOrderActions(trip.tourId)
   const [filter, setFilter] = useState<OrderStatus | '全部'>('全部')
   const [editing, setEditing] = useState<TripOrder | null>(null)
   const orders = trip.orders
   if (!orders.length) return <Empty icon="receipt-off" text="尚無訂單" hint="於「行程安排」選購紀念商品後，訂單明細會顯示於此" />
   const total = orders.filter((o) => o.status !== '已取消').reduce((s, o) => s + o.amount, 0)
 
-  const update = (o: TripOrder, changes: Partial<TripOrder>, msg: string, icon?: 'x') =>
-    commit((d) => {
-      const x = d.ongoing.find((t) => t.tourId === trip.tourId)!.orders.find((y) => y.id === o.id)
-      if (x) Object.assign(x, changes)
-    }, { type: 'updateOrder', tourId: trip.tourId, orderId: o.id, changes }, msg, icon)
+  /* 付款 / 取消 / 改數量皆以後端回應的訂單為準（見 useTripOrderActions） */
+  const run = async (call: () => Promise<TripOrder>, msg: string, icon?: 'x') => {
+    await call()
+    toast(msg, icon)
+  }
 
   return (
     <>
@@ -144,17 +142,16 @@ function BuyPane({ trip }: { trip: OngoingTrip }) {
             <span className={`ostatus ${ostatusClass(o.status)}`}>{o.status}</span>
             {(o.status === '未付款' || o.status === '待出貨') && (
               <div className="order-acts">
-                {o.status === '未付款' && <button className="oact pay" onClick={() => update(o, { status: '已付款' }, '付款成功')}><Icon name="credit-card" />付款</button>}
+                {o.status === '未付款' && <AsyncButton className="oact pay" onClick={() => run(() => actions.pay.mutateAsync(o.id), '付款成功')}><Icon name="credit-card" />付款</AsyncButton>}
                 <button className="oact" onClick={() => setEditing(o)}><Icon name="edit" />修改</button>
-                <button className="oact del" onClick={() => update(o, { status: '已取消' }, '訂單已取消', 'x')}><Icon name="x" />取消</button>
+                <AsyncButton className="oact del" onClick={() => run(() => actions.cancel.mutateAsync(o.id), '訂單已取消', 'x')}><Icon name="x" />取消</AsyncButton>
               </div>
             )}
           </div>
         )} />
       {editing && (
-        <QtyModal order={editing} onClose={() => setEditing(null)} onSave={(qty) => {
-          const unit = Math.round(editing.amount / editing.qty)
-          update(editing, { qty, amount: unit * qty }, '已更新數量')
+        <QtyModal order={editing} onClose={() => setEditing(null)} onSave={async (qty) => {
+          await run(() => actions.updateQty.mutateAsync({ orderId: editing.id, qty }), '已更新數量')
           setEditing(null)
         }} />
       )}
@@ -165,19 +162,26 @@ function BuyPane({ trip }: { trip: OngoingTrip }) {
 /* 進行中行程管理：/traveler/my-tours/:tourId?tab= */
 export default function Ongoing() {
   const { tourId } = useParams()
-  const { data } = useTraveler()
+  const trips = useTrips()
+  return (
+    <QueryState queries={[trips]}>{() => {
+      const trip = trips.data!.ongoing.find((t) => t.tourId === tourId)
+      return trip ? <OngoingView trip={trip} /> : <Navigate to="/traveler/my-tours?tab=ongoing" replace />
+    }}</QueryState>
+  )
+}
+
+function OngoingView({ trip }: { trip: OngoingTrip }) {
   const nav = useNavigate()
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as OgTab) || 'plan'
   const [cart, setCart] = useState<CartLine[]>([])
   const [dialog, setDialog] = useState<'cart' | 'checkout' | null>(null)
 
-  const trip = data.ongoing.find((t) => t.tourId === tourId)
-  if (!trip) return <Navigate to="/traveler/my-tours?tab=ongoing" replace />
   const setTab = (t: OgTab) => setParams({ tab: t }, { replace: true })
 
   function addToCart(id: string) {
-    const s = trip!.locations.flatMap((l) => l.souvenirs).find((x) => x.id === id)
+    const s = trip.locations.flatMap((l) => l.souvenirs).find((x) => x.id === id)
     if (!s) return
     setCart((c) => addLine(c, { id, name: s.name, price: s.price }))
     toast('已加入購物車：' + s.name, 'shopping-cart-plus')

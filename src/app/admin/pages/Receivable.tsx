@@ -1,8 +1,15 @@
-import { Icon, PageHead } from '../../../components'
-import { RECEIVABLE } from '../../../api/mocks/admin'
+import { Icon, PageHead, QueryState } from '../../../components'
+import { useAdminData } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import { fmt } from '../utils'
 
 export default function Receivable() {
+  const { queries, data } = useAdminData('receivables')
+  return <QueryState queries={queries}>{() => <ReceivableView data={data!} />}</QueryState>
+}
+
+function ReceivableView({ data }: { data: Pick<AdminData, 'receivables'> }) {
+  const RECEIVABLE = data.receivables
   const inSum = RECEIVABLE.filter((r) => r.type === '應收').reduce((s, r) => s + r.amount, 0)
   const outSum = RECEIVABLE.filter((r) => r.type === '應付').reduce((s, r) => s + r.amount, 0)
   return (

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Field, Hl, Icon, Modal, PageHead, SearchBox, TableEmpty } from '../../../components'
+import { AsyncButton, confirmDialog, Field, Hl, Icon, Modal, PageHead, QueryState, SearchBox, TableEmpty, toast, useBusy } from '../../../components'
 import { ANN_TYPES } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { useAdminData, useCrud } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { AnnCat, Announcement, AnnTarget } from '../../../api/types/admin'
-import { includesQ, uid } from '../utils'
+import { includesQ } from '../utils'
 
 const SEARCH_FIELDS = ['全文', '依公告類別', '依團名', '依行程', '依關鍵字'] as const
 type SearchField = (typeof SEARCH_FIELDS)[number]
@@ -24,7 +25,8 @@ const toSlashDate = (s: string) => s.replace(/-/g, '/')
 
 /* 內容撰寫 → 發佈日期 → 發佈對象 */
 function AnnModal({ ann, onClose }: { ann: Announcement | null; onClose: () => void }) {
-  const { data, create, update, toast } = useAdmin()
+  const data = useAdminData('tours').data!
+  const { create, update } = useCrud()
   const [cat, setCat] = useState<AnnCat>(ann?.cat || '每日公告')
   const [type, setType] = useState(ann?.type || ANN_TYPES['每日公告'][0])
   const [headline, setHeadline] = useState(ann?.headline || '')
@@ -43,16 +45,17 @@ function AnnModal({ ann, onClose }: { ann: Announcement | null; onClose: () => v
     setTargetVal(t === '依關鍵字' ? '' : tourTitles[0] || '')
   }
 
-  function save(published: boolean) {
+  /* 兩個送出按鈕共用：任一執行中時兩者皆停用 */
+  const [saving, run] = useBusy()
+  async function save(published: boolean) {
     if (!headline.trim()) return toast('請輸入標題', 'alert-circle')
     const rec = {
       cat, type, headline: headline.trim(), body: body.trim(), target, targetVal, tour_title: isKw ? '' : targetVal,
       mode, pubFrom: toSlashDate(from || new Date().toISOString().slice(0, 10)), pubTo: toSlashDate(to), published,
     }
     const msg = published ? (mode === 'now' ? '公告已發佈 📢' : '已排定預約發佈') : '已存為草稿'
-    onClose()
-    if (ann) update('announcements', ann.id, rec, msg)
-    else create('announcements', { id: uid('an'), ...rec }, msg)
+    const saved = ann ? await update('announcements', ann.id, rec, msg) : await create('announcements', rec, msg)
+    if (saved) onClose()
   }
 
   return (
@@ -100,15 +103,20 @@ function AnnModal({ ann, onClose }: { ann: Announcement | null; onClose: () => v
       </Field>
 
       <div className="action-2">
-        <button className="btn btn-ghost" onClick={() => save(false)}><Icon name="device-floppy" />存為草稿</button>
-        <button className="btn btn-primary" onClick={() => save(true)}><Icon name="speakerphone" />發佈公告</button>
+        <AsyncButton className="btn btn-ghost" disabled={saving} onClick={() => run(() => save(false))}><Icon name="device-floppy" />存為草稿</AsyncButton>
+        <AsyncButton className="btn btn-primary" disabled={saving} onClick={() => run(() => save(true))}><Icon name="speakerphone" />發佈公告</AsyncButton>
       </div>
     </Modal>
   )
 }
 
 export default function Announcements() {
-  const { data, remove } = useAdmin()
+  const { queries, data } = useAdminData('announcements', 'tours')
+  return <QueryState queries={queries}>{() => <AnnouncementsView data={data!} />}</QueryState>
+}
+
+function AnnouncementsView({ data }: { data: Pick<AdminData, 'announcements' | 'tours'> }) {
+  const { remove } = useCrud()
   const [q, setQ] = useState('')
   const [field, setField] = useState<SearchField>('全文')
   const [cat, setCat] = useState<AnnCat | '全部'>('全部')
@@ -117,7 +125,7 @@ export default function Announcements() {
   const list = data.announcements.filter((a) => (cat === '全部' || a.cat === cat) && annMatch(a, q, field))
 
   function del(a: Announcement) {
-    if (confirm('確定刪除此公告？')) remove('announcements', a.id, '已刪除公告')
+    return confirmDialog({ title: '刪除公告？', message: `「${a.headline}」將被刪除。`, confirmLabel: '刪除', danger: true, onConfirm: () => remove('announcements', a.id, '已刪除公告') })
   }
 
   return (

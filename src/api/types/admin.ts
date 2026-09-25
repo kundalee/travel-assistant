@@ -32,6 +32,8 @@ export interface Tour {
   img_url?: string
   guide_id: string | null
   guide_name?: string
+  /** 團員人數（由後端依名冊計算） */
+  member_count?: number
   places?: string[]
   published?: boolean
   source?: string
@@ -151,6 +153,7 @@ export interface MonthlySales {
 }
 
 export interface TrackingGroup {
+  id: string
   tour: string
   city: string
   continent: string
@@ -165,7 +168,8 @@ export interface TrackingGroup {
   updated: string
 }
 
-export interface AdminData {
+/** 可新增 / 修改 / 刪除的資料集（對應 /admin/<collection>） */
+export interface AdminCollections {
   users: User[]
   tours: Tour[]
   orders: Order[]
@@ -185,4 +189,42 @@ export interface RosterMember {
   email: string
   phone: string
   nick?: string
+}
+
+/** 登入帳號預設值：ID = email、PW = 電話（無電話則由系統產生） */
+export interface RosterEntry extends RosterMember {
+  code: string
+  loginId: string
+  loginPw: string
+  pwSource: '電話' | '系統自訂'
+}
+
+export interface RankRow { n: string; v: number }
+
+export interface Stats {
+  members: { tour: string; n: number; guide: string }[]
+  rankSouvenir: RankRow[]
+  rankDeal: RankRow[]
+  rankTour: RankRow[]
+  rankBoutique: RankRow[]
+  perf: { who: string; role: string; kind: string; shipped: number; amount: number; bonus: number }[]
+}
+
+export interface Receivable {
+  party: string
+  type: '應收' | '應付'
+  amount: number
+  due: string
+  done: boolean
+}
+
+export interface Vital { name: string; temp: number; bp: string; ok: boolean }
+export interface Zone { name: string; note: string; level: 'warn' | 'ok' }
+
+/** 後台畫面需要的全部資料：資料集 ＋ 唯讀報表 */
+export interface AdminData extends AdminCollections {
+  stats: Stats
+  receivables: Receivable[]
+  vitals: Vital[]
+  zones: Zone[]
 }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Chips, Empty, Hl, Icon } from '../../components'
 import { stars } from '../../lib/orders'
 import { avatarFor, memberOf } from './helpers'
-import { useGuide } from './store'
+import { useMembers } from './queries'
 import type { Chat, CompletedTour, OngoingTour, Review, RosterMember, UpcomingTour } from '../../api/types/guide'
 
 /* 畫面容器（沿用原版淡入動畫） */
@@ -117,8 +117,8 @@ export function TourCard(props: TourCardProps) {
 }
 
 export function ReviewCard({ review }: { review: Review }) {
-  const { data } = useGuide()
-  const m = memberOf(data, review.mid)
+  const members = useMembers()
+  const m = members.data && memberOf(members.data, review.mid)
   return (
     <div className="rev-card">
       <div className="rev-top">
@@ -151,20 +151,24 @@ export function ChatView({ tabs, current, chat, onSelect, onSend, emptyHint }: {
   current: string
   chat: Chat | undefined
   onSelect: (key: string) => void
-  onSend: (text: string) => void
+  /** 回傳 true 表示送出成功（清空輸入）；失敗時保留文字 */
+  onSend: (text: string) => Promise<boolean>
   emptyHint: string
 }) {
   const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const msgs = chat?.msgs || []
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [msgs.length, current])
 
-  function send() {
+  async function send() {
     const t = text.trim()
-    if (!t) return
-    onSend(t)
-    setText('')
+    if (!t || sending) return
+    setSending(true)
+    const ok = await onSend(t)
+    setSending(false)
+    if (ok) setText('')
   }
 
   return (
@@ -184,7 +188,7 @@ export function ChatView({ tabs, current, chat, onSelect, onSend, emptyHint }: {
       </div>
       <div className="chat-bar">
         <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="輸入訊息…" />
-        <button className="btn btn-primary" onClick={send} aria-label="送出"><Icon name="send" /></button>
+        <button className="btn btn-primary" onClick={send} disabled={sending} aria-busy={sending || undefined} aria-label="送出"><Icon name="send" /></button>
       </div>
     </>
   )

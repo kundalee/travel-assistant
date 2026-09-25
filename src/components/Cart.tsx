@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { fmt } from '../lib/utils'
+import { AsyncButton } from './AsyncButton'
 import { Empty } from './Empty'
 import { Icon, type IconName } from './Icon'
 import { Modal } from './Modal'
@@ -81,7 +82,8 @@ interface CartModalProps {
   cart: CartLine[]
   onQty: (id: string, d: number) => void
   onCancel: () => void
-  onConfirm: () => void
+  /** 回傳 Promise 時，等待期間按鈕顯示讀取中 */
+  onConfirm: () => unknown
   confirmLabel?: string
   confirmIcon?: IconName
   onClose: () => void
@@ -103,7 +105,7 @@ export function CartModal({ title = '購物車', sub, cart, onQty, onCancel, onC
       <div className="cart-total-row">合計 <b>NT$ {fmt(cartTotal(cart))}</b></div>
       <div className="action-2">
         <button className="btn btn-ghost" onClick={onCancel}><Icon name="trash" />取消下單</button>
-        <button className="btn btn-primary" onClick={onConfirm}><Icon name={confirmIcon} />{confirmLabel}</button>
+        <AsyncButton className="btn btn-primary" onClick={onConfirm}><Icon name={confirmIcon} />{confirmLabel}</AsyncButton>
       </div>
       {footer}
     </Modal>

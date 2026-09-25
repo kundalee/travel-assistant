@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { OrderRow, OrderModal } from '../components/OrderParts'
-import { Chips, Empty, Icon, PageHead } from '../../../components'
+import { Chips, Empty, Icon, PageHead, QueryState } from '../../../components'
 import { DataNote } from '../components/DataNote'
 import { ORDER_KINDS, STATUS_ALL } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { useAdminData } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import type { Order, OrderStatus, ProductKind } from '../../../api/types/admin'
 import { fmt, ostatusClass } from '../utils'
 
@@ -27,7 +28,11 @@ function StatusBlock({ rows, status, onOpen }: { rows: Order[]; status: OrderSta
 
 /* 訂單：商品類別 → 細分類 → 各狀態加總 */
 export default function Orders() {
-  const { data } = useAdmin()
+  const { queries, data } = useAdminData('orders')
+  return <QueryState queries={queries}>{() => <OrdersView data={data!} />}</QueryState>
+}
+
+function OrdersView({ data }: { data: Pick<AdminData, 'orders'> }) {
   const [kind, setKind] = useState<KindFilter>('all')
   const [cat, setCat] = useState('全部')
   const [status, setStatus] = useState<StatusFilter>('全部')

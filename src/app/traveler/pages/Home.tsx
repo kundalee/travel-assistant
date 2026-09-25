@@ -1,13 +1,34 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { addLine, Icon, toast, type IconName } from '../../../components'
+import { addLine, Icon, QueryState, toast, type IconName } from '../../../components'
 import { AlbumModal, BoutiqueCard, CatalogCard, GroupBuyCard, NoticeCard, Screen, SectionTitle } from '../components'
-import { useTraveler } from '../store'
-import type { GroupBuyItem } from '../../../api/types/traveler'
+import { useBoutique, useCatalog, useGroupBuy, useHistoryTours, useNotices, useProfile, useTrips } from '../queries'
+import { useGbCart } from '../store'
+import type { GroupBuyItem, TravelerData } from '../../../api/types/traveler'
 import { MyTourCard } from './MyTours'
 
 export default function Home() {
-  const { user, data, setGbCart } = useTraveler()
+  const profile = useProfile()
+  const trips = useTrips()
+  const notices = useNotices()
+  const boutique = useBoutique()
+  const groupbuy = useGroupBuy()
+  const catalog = useCatalog()
+  const historyTours = useHistoryTours()
+  return (
+    <Screen>
+      <QueryState queries={[profile, trips, notices, boutique, groupbuy, catalog, historyTours]}>{() => (
+        <HomeView data={{
+          name: profile.data!.name, upcoming: trips.data!.upcoming, notices: notices.data!, boutique: boutique.data!,
+          groupbuy: groupbuy.data!, catalog: catalog.data!, historyTours: historyTours.data!,
+        }} />
+      )}</QueryState>
+    </Screen>
+  )
+}
+
+function HomeView({ data }: { data: { name: string } & Pick<TravelerData, 'upcoming' | 'notices' | 'boutique' | 'groupbuy' | 'catalog' | 'historyTours'> }) {
+  const [, setGbCart] = useGbCart()
   const nav = useNavigate()
   const [album, setAlbum] = useState<string | null>(null)
   const upcoming = data.upcoming[0]
@@ -31,11 +52,11 @@ export default function Home() {
   }
 
   return (
-    <Screen>
+    <>
       <div className="pad">
         <div style={{ marginBottom: '1.25rem' }}>
           <p className="muted" style={{ fontSize: 13 }}>歡迎回來 👋</p>
-          <h2 className="page-title" style={{ fontSize: '1.5rem', marginBottom: 0 }}>{user?.profile.name || '團員'}</h2>
+          <h2 className="page-title" style={{ fontSize: '1.5rem', marginBottom: 0 }}>{data.name || '團員'}</h2>
         </div>
 
         <SectionTitle icon="plane-departure" more="我的行程" onMore={() => nav('/traveler/my-tours')}>即將出發</SectionTitle>
@@ -73,6 +94,6 @@ export default function Home() {
         <div className="stack">{data.catalog.slice(0, 3).map((t) => <CatalogCard key={t.id} t={t} />)}</div>
       </div>
       {album && <AlbumModal name={album} onClose={() => setAlbum(null)} />}
-    </Screen>
+    </>
   )
 }

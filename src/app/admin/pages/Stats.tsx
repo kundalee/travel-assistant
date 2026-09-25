@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Icon, PageHead, Tabs, type IconName } from '../../../components'
-import { STATS } from '../../../api/mocks/admin'
+import { Icon, type IconName, PageHead, QueryState, Tabs } from '../../../components'
+import type { Stats as StatsData } from '../../../api/types/admin'
+import { useAdminData } from '../queries'
+import type { AdminData } from '../../../api/types/admin'
 import { fmt } from '../utils'
 
 type Tab = 'members' | 'product' | 'perf'
@@ -25,14 +27,20 @@ function RankList({ rows, unit }: { rows: { n: string; v: number }[]; unit: stri
   )
 }
 
-const RANKS: [IconName, string, { n: string; v: number }[], string][] = [
-  ['gift', '紀念商品排名', STATS.rankSouvenir, '件'],
-  ['discount', '團購商品排名', STATS.rankDeal, '件'],
-  ['map-2', '推薦行程排名', STATS.rankTour, '人'],
-  ['diamond', '精品好物排名', STATS.rankBoutique, '件'],
+const RANKS: [IconName, string, (s: StatsData) => { n: string; v: number }[], string][] = [
+  ['gift', '紀念商品排名', (s) => s.rankSouvenir, '件'],
+  ['discount', '團購商品排名', (s) => s.rankDeal, '件'],
+  ['map-2', '推薦行程排名', (s) => s.rankTour, '人'],
+  ['diamond', '精品好物排名', (s) => s.rankBoutique, '件'],
 ]
 
 export default function Stats() {
+  const { queries, data } = useAdminData('stats')
+  return <QueryState queries={queries}>{() => <StatsView data={data!} />}</QueryState>
+}
+
+function StatsView({ data }: { data: Pick<AdminData, 'stats'> }) {
+  const STATS = data.stats
   const [tab, setTab] = useState<Tab>('members')
   return (
     <div className="pad">
@@ -46,10 +54,10 @@ export default function Stats() {
         </div>
       ))}
 
-      {tab === 'product' && RANKS.map(([icon, title, rows, unit], i) => (
+      {tab === 'product' && RANKS.map(([icon, title, pick, unit], i) => (
         <div key={title}>
           <div className="section-title sm" style={i ? { marginTop: '1rem' } : undefined}><Icon name={icon} />{title}</div>
-          <RankList rows={rows} unit={unit} />
+          <RankList rows={pick(STATS)} unit={unit} />
         </div>
       ))}
 

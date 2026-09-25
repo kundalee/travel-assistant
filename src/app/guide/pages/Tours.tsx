@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Empty, FlightModal, Modal, NotesModal, VideoModal } from '../../../components'
+import { Empty, FlightModal, Modal, NotesModal, QueryState, VideoModal } from '../../../components'
 import { PageTitle, ReviewCard, Screen, TourCard } from '../components'
-import { useGuide } from '../store'
+import { type ToursData, useTours } from '../queries'
 import type { CompletedTour, UpcomingTour } from '../../../api/types/guide'
 
 type TourTab = 'ongoing' | 'completed' | 'upcoming'
@@ -30,11 +30,10 @@ export function UpcomingModals({ view, onClose }: { view: UpcomingView | null; o
 }
 
 export default function Tours() {
-  const { data } = useGuide()
+  const tours = useTours()
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as TourTab) || 'ongoing'
   const [view, setView] = useState<UpcomingView | null>(null)
-  const count = data[tab].length
 
   return (
     <Screen>
@@ -45,21 +44,27 @@ export default function Tours() {
             <button key={t} className={`dtab ${tab === t ? 'active' : ''}`} onClick={() => setParams({ tab: t }, { replace: true })}>{TAB_LABEL[t]}</button>
           ))}
         </div>
-        <div className="stack">
-          {!count && <Empty icon="calendar" text={`目前沒有${TAB_LABEL[tab]}的行程`} hint="行程將顯示於此" />}
-          {tab === 'ongoing' && data.ongoing.map((t) => <TourCard key={t.tourId} kind="ongoing" tour={t} />)}
-          {tab === 'completed' && data.completed.map((t) => (
-            <TourCard key={t.tourId} kind="completed" tour={t} onReviews={() => setView({ kind: 'reviews', tour: t })} />
-          ))}
-          {tab === 'upcoming' && data.upcoming.map((t) => (
-            <TourCard key={t.tourId} kind="upcoming" tour={t}
-              onVideo={() => setView({ kind: 'video', tour: t })}
-              onNotes={() => setView({ kind: 'notes', tour: t })}
-              onFlight={() => setView({ kind: 'flight', tour: t })} />
-          ))}
-        </div>
+        <QueryState queries={[tours]}>{() => <TourList data={tours.data!} tab={tab} onView={setView} />}</QueryState>
       </div>
       <UpcomingModals view={view} onClose={() => setView(null)} />
     </Screen>
+  )
+}
+
+function TourList({ data, tab, onView }: { data: ToursData; tab: TourTab; onView: (v: UpcomingView) => void }) {
+  return (
+    <div className="stack">
+      {!data[tab].length && <Empty icon="calendar" text={`目前沒有${TAB_LABEL[tab]}的行程`} hint="行程將顯示於此" />}
+      {tab === 'ongoing' && data.ongoing.map((t) => <TourCard key={t.tourId} kind="ongoing" tour={t} />)}
+      {tab === 'completed' && data.completed.map((t) => (
+        <TourCard key={t.tourId} kind="completed" tour={t} onReviews={() => onView({ kind: 'reviews', tour: t })} />
+      ))}
+      {tab === 'upcoming' && data.upcoming.map((t) => (
+        <TourCard key={t.tourId} kind="upcoming" tour={t}
+          onVideo={() => onView({ kind: 'video', tour: t })}
+          onNotes={() => onView({ kind: 'notes', tour: t })}
+          onFlight={() => onView({ kind: 'flight', tour: t })} />
+      ))}
+    </div>
   )
 }

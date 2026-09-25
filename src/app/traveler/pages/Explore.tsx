@@ -1,34 +1,41 @@
 import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { Chips, Empty, Field, Icon, Modal, SearchBox, Tabs } from '../../../components'
+import { AsyncButton, Chips, Empty, Field, Icon, Modal, QueryState, SearchBox, Tabs, toast } from '../../../components'
 import { fmt, includesQ } from '../../../lib/utils'
 import { CatalogCard, PageTitle, RadioCards, Screen, SubHead } from '../components'
-import { IMG } from '../../../api/mocks/traveler'
-import { useTraveler } from '../store'
-import type { CatalogTour, PayMethod } from '../../../api/types/traveler'
+import { useBook, useCatalog, useProfile } from '../queries'
+import type { CatalogTour, PayMethod, TravelerProfile } from '../../../api/types/traveler'
 
 export default function Explore() {
-  const { data } = useTraveler()
-  const [q, setQ] = useState('')
-  const [region, setRegion] = useState('全部')
-  const [tag, setTag] = useState('全部')
-  const regions = ['全部', ...new Set(data.catalog.map((t) => t.region))]
-  const tags = ['全部', ...new Set(data.catalog.flatMap((t) => t.tags))]
-  const list = data.catalog.filter((t) =>
-    (region === '全部' || t.region === region) && (tag === '全部' || t.tags.includes(tag)) && includesQ([t.title, t.dest], q))
-
+  const catalog = useCatalog()
   return (
     <Screen>
       <div className="pad">
         <PageTitle>探索行程</PageTitle>
-        <SearchBox value={q} onChange={setQ} placeholder="搜尋目的地或行程名稱…" />
-        <Chips value={region} onChange={setRegion} items={regions.map((r) => [r, r])} />
-        <Chips value={tag} onChange={setTag} items={tags.map((t) => [t, t])} />
-        <div className="stack">
-          {list.length ? list.map((t) => <CatalogCard key={t.id} t={t} />) : <Empty icon="map-off" text="查無符合行程" hint="試試其他關鍵字或篩選條件" />}
-        </div>
+        <QueryState queries={[catalog]}>{() => <CatalogList catalog={catalog.data!} />}</QueryState>
       </div>
     </Screen>
+  )
+}
+
+function CatalogList({ catalog }: { catalog: CatalogTour[] }) {
+  const [q, setQ] = useState('')
+  const [region, setRegion] = useState('全部')
+  const [tag, setTag] = useState('全部')
+  const regions = ['全部', ...new Set(catalog.map((t) => t.region))]
+  const tags = ['全部', ...new Set(catalog.flatMap((t) => t.tags))]
+  const list = catalog.filter((t) =>
+    (region === '全部' || t.region === region) && (tag === '全部' || t.tags.includes(tag)) && includesQ([t.title, t.dest], q))
+
+  return (
+    <>
+      <SearchBox value={q} onChange={setQ} placeholder="搜尋目的地或行程名稱…" />
+      <Chips value={region} onChange={setRegion} items={regions.map((r) => [r, r])} />
+      <Chips value={tag} onChange={setTag} items={tags.map((t) => [t, t])} />
+      <div className="stack">
+        {list.length ? list.map((t) => <CatalogCard key={t.id} t={t} />) : <Empty icon="map-off" text="查無符合行程" hint="試試其他關鍵字或篩選條件" />}
+      </div>
+    </>
   )
 }
 
@@ -39,30 +46,35 @@ const BOOK_PAY: { key: BookPay; icon: 'credit-card' | 'building-bank' | 'buildin
   { key: 'cvs', icon: 'building-store', title: '超商付款', desc: '四大超商代碼繳費' },
 ]
 
+/* 表單以個人資料預填，需等個人資料載入後才顯示 */
 function BookingModal({ tour, onClose }: { tour: CatalogTour; onClose: () => void }) {
-  const { user, commit } = useTraveler()
+  const profile = useProfile()
+  return (
+    <Modal onClose={onClose} title="線上報名" sub={`${tour.title} · ${tour.dates}`}>
+      <QueryState queries={[profile]}>{() => <BookingForm tour={tour} p={profile.data!} onClose={onClose} />}</QueryState>
+    </Modal>
+  )
+}
+
+function BookingForm({ tour, p, onClose }: { tour: CatalogTour; p: TravelerProfile; onClose: () => void }) {
+  const book = useBook()
   const nav = useNavigate()
-  const p = user!.profile
   const [f, setF] = useState({ name: p.name, phone: p.phone, nationalId: '', passport: p.passport, needs: '' })
   const [pay, setPay] = useState<BookPay>('card')
   const [err, setErr] = useState('')
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
 
-  function submit() {
+  /* 行程由後端建立（報名編號、QR、集合資訊） */
+  async function submit() {
     if (!f.name.trim() || !f.phone.trim()) return setErr('請填寫姓名與手機。')
+    await book.mutateAsync({ tourId: tour.id, ...f, pay })
+    toast('報名成功！付款方式：' + BOOK_PAY.find((x) => x.key === pay)!.title)
     onClose()
-    commit((d) => {
-      if (d.upcoming.some((x) => x.tourId === tour.id)) return
-      d.upcoming.push({
-        tourId: tour.id, title: tour.title, dest: tour.dest, img: tour.img, dates: tour.dates,
-        meetTime: '待通知', meetPlace: '待通知', guide: tour.guide, guideRole: '領隊導遊', phone: '—', guideImg: IMG.guideM, qr: 'TA-BK-' + Date.now(),
-      })
-    }, { type: 'book', tourId: tour.id, ...f, pay }, '報名成功！付款方式：' + BOOK_PAY.find((x) => x.key === pay)!.title)
     nav('/traveler/my-tours?tab=upcoming')
   }
 
   return (
-    <Modal onClose={onClose} title="線上報名" sub={`${tour.title} · ${tour.dates}`}>
+    <>
       {err && <div className="alert err show"><Icon name="alert-circle" /><span>{err}</span></div>}
       <div className="section-title sm"><Icon name="user" />旅客資料</div>
       <div className="row-2">
@@ -77,9 +89,9 @@ function BookingModal({ tour, onClose }: { tour: CatalogTour; onClose: () => voi
       <div className="section-title sm"><Icon name="credit-card" />付款方式</div>
       <RadioCards options={BOOK_PAY} value={pay} onChange={setPay} />
       <div className="total-row"><span>應付金額</span><b>NT$ {fmt(tour.price)}</b></div>
-      <button className="btn btn-primary btn-block btn-lg" onClick={submit}><Icon name="check" />確認報名</button>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={submit}><Icon name="check" />確認報名</AsyncButton>
       <p className="hint" style={{ textAlign: 'center', marginTop: '0.75rem' }}>送出後可於「我的行程」查看，此為報名流程展示，未進行實際扣款。</p>
-    </Modal>
+    </>
   )
 }
 
@@ -88,11 +100,18 @@ type DetailTab = 'feat' | 'itin' | 'incl'
 /* 行程詳情：/traveler/tours/:id */
 export function TourDetail() {
   const { id } = useParams()
-  const { data } = useTraveler()
+  const catalog = useCatalog()
+  return (
+    <QueryState queries={[catalog]}>{() => {
+      const t = catalog.data!.find((x) => x.id === id)
+      return t ? <TourDetailView t={t} /> : <Navigate to="/traveler/explore" replace />
+    }}</QueryState>
+  )
+}
+
+function TourDetailView({ t }: { t: CatalogTour }) {
   const [tab, setTab] = useState<DetailTab>('feat')
   const [booking, setBooking] = useState(false)
-  const t = data.catalog.find((x) => x.id === id)
-  if (!t) return <Navigate to="/traveler/explore" replace />
 
   return (
     <Screen>

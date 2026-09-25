@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Chips, Icon } from '../../../components'
-import { IMG } from '../../../api/mocks/traveler'
-import { useTraveler } from '../store'
-import type { ChatMsg } from '../../../api/types/traveler'
+import { Chips, Icon, QueryState } from '../../../components'
+import { useChats, useSendMessage } from '../queries'
+import type { Chat as ChatRoom, ChatMsg } from '../../../api/types/traveler'
 
 function Bubble({ m }: { m: ChatMsg }) {
   return (
@@ -20,12 +19,22 @@ function Bubble({ m }: { m: ChatMsg }) {
 
 /* 聊天：/traveler/chat?c=group1 */
 export default function Chat() {
-  const { data, commit } = useTraveler()
+  const chats = useChats()
+  return (
+    <section className="screen active">
+      <QueryState queries={[chats]}>{() => <ChatRooms chats={chats.data!} />}</QueryState>
+    </section>
+  )
+}
+
+function ChatRooms({ chats }: { chats: Record<string, ChatRoom> }) {
+  const sendMessage = useSendMessage()
   const [params, setParams] = useSearchParams()
-  const keys = Object.keys(data.chats)
-  const current = params.get('c') && data.chats[params.get('c')!] ? params.get('c')! : keys[0]
-  const chat = data.chats[current]
+  const keys = Object.keys(chats)
+  const current = params.get('c') && chats[params.get('c')!] ? params.get('c')! : keys[0]
+  const chat = chats[current]
   const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -33,13 +42,14 @@ export default function Chat() {
     if (el) el.scrollTop = el.scrollHeight
   }, [current, chat?.msgs.length])
 
-  function send() {
+  /* 送出成功才加入後端回傳的訊息並清空輸入；失敗時保留文字 */
+  async function send() {
     const t = text.trim()
-    if (!t) return
-    const now = new Date()
-    const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`
-    commit((d) => { d.chats[current].msgs.push({ self: true, name: '我', av: IMG.me, text: t, time }) }, { type: 'sendMessage', chatKey: current, text: t })
-    setText('')
+    if (!t || sending) return
+    setSending(true)
+    const ok = await sendMessage.mutateAsync({ chatKey: current, text: t }).then(() => true, () => false)
+    setSending(false)
+    if (ok) setText('')
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -47,8 +57,8 @@ export default function Chat() {
   }
 
   return (
-    <section className="screen active">
-      <Chips className="chips chat-tabs" value={current} onChange={(c) => setParams({ c }, { replace: true })} items={keys.map((k) => [k, data.chats[k].name])} />
+    <>
+      <Chips className="chips chat-tabs" value={current} onChange={(c) => setParams({ c }, { replace: true })} items={keys.map((k) => [k, chats[k].name])} />
       <div className="chat-shell">
         <div className="chat-scroll" ref={scrollRef}>
           <div className="sys-msg">您已加入「{chat.name}」聊天室</div>
@@ -56,9 +66,9 @@ export default function Chat() {
         </div>
         <div className="chat-input">
           <textarea rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} placeholder="輸入訊息…" />
-          <button className="chat-send" onClick={send} aria-label="送出"><Icon name="send" /></button>
+          <button className="chat-send" onClick={send} disabled={sending} aria-busy={sending || undefined} aria-label="送出"><Icon name="send" /></button>
         </div>
       </div>
-    </section>
+    </>
   )
 }

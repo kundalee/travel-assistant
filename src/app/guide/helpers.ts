@@ -1,10 +1,14 @@
 import type { Campaign, DealOrder, GuideData, PastMember, PastTour, RosterMember } from '../../api/types/guide'
 
+/* 各函式只取所需的資料（來自不同查詢：團員 useMembers、行程 useTours…） */
+type Rosters = Pick<GuideData, 'rosters' | 'pastTours'>
+type Tours = Pick<GuideData, 'ongoing' | 'upcoming' | 'completed'>
+
 const SURNAMES = ['林', '陳', '黃', '張', '李', '王', '吳', '蔡', '鄭', '許', '趙', '周', '劉', '楊', '洪', '謝']
 const seatNo = (n: number) => String(n).padStart(3, '0')
 
 /* 行程名冊：有種子資料者先列出，其餘以樣板補足到 count 人 */
-export function rosterOf(data: GuideData, tourId: string, count?: number): RosterMember[] {
+export function rosterOf(data: Rosters, tourId: string, count?: number): RosterMember[] {
   const r = data.rosters[tourId]
   if (!r) {
     const pt = data.pastTours.find((t) => t.tourId === tourId)
@@ -26,32 +30,32 @@ function genRoster(t: PastTour): RosterMember[] {
 }
 
 /* 行程人數：歷史行程或目前行程 */
-export function tourCount(data: GuideData, tourId: string) {
+export function tourCount(data: Rosters & Tours, tourId: string) {
   return data.pastTours.find((t) => t.tourId === tourId)?.count
     ?? [...data.ongoing, ...data.upcoming].find((t) => t.tourId === tourId)?.members
     ?? 0
 }
 
-export function tourTitle(data: GuideData, tourId: string) {
+export function tourTitle(data: Rosters & Tours, tourId: string) {
   return data.pastTours.find((t) => t.tourId === tourId)?.title
     ?? [...data.ongoing, ...data.upcoming, ...data.completed].find((t) => t.tourId === tourId)?.title
     ?? ''
 }
 
 /* 我的歷史團員：彙整所有行程名冊 */
-export function allPastMembers(data: GuideData): PastMember[] {
+export function allPastMembers(data: Rosters): PastMember[] {
   return data.pastTours.flatMap((t) =>
     rosterOf(data, t.tourId, t.count).map((m) => ({ ...m, tourId: t.tourId, tourTitle: t.title, batch: t.batch })))
 }
 
 /* 團購呼叫對象：先前團員（排除進行中行程的團員） */
-export function campaignMembers(data: GuideData) {
+export function campaignMembers(data: Rosters & Pick<GuideData, 'ongoing'>) {
   const ongoing = data.ongoing.map((t) => t.tourId)
   return allPastMembers(data).filter((m) => !ongoing.includes(m.tourId))
 }
 
-export const memberOf = (data: GuideData, id: string) => data.members.find((m) => m.id === id)
-export const pointName = (data: GuideData, id: string) => data.points.find((p) => p.id === id)?.name || '未指定'
+export const memberOf = (data: Pick<GuideData, 'members'>, id: string) => data.members.find((m) => m.id === id)
+export const pointName = (data: Pick<GuideData, 'points'>, id: string) => data.points.find((p) => p.id === id)?.name || '未指定'
 
 /* 團購訂單累積的團員（以團編號去重） */
 export function uniqueByCode(orders: DealOrder[]) {
@@ -60,7 +64,7 @@ export function uniqueByCode(orders: DealOrder[]) {
 }
 
 /* 呼叫訊息對應的選購團員：以訊息標題 / 內容比對精品好物名稱 */
-export function campaignBuyers(data: GuideData, c: Campaign) {
+export function campaignBuyers(data: Pick<GuideData, 'boutique' | 'dealOrders'>, c: Campaign) {
   const matched = data.boutique.map((b) => b.name).filter((n) => c.title.includes(n) || c.body.includes(n))
   let orders = matched.length
     ? data.dealOrders.filter((o) => matched.some((n) => o.product.includes(n)))

@@ -1,4 +1,4 @@
-import { KIND_TW, ROSTER_SEED } from '../../api/mocks/admin'
+import { KIND_TW } from '../../api/mocks/admin'
 import type { Product, Tour, Vendor } from '../../api/types/admin'
 
 export { clone, errMsg, fmt, includesQ, parseCoord, uid } from '../../lib/utils'
@@ -28,18 +28,6 @@ export function computeTourStatus(t: Tour): Tour['status'] {
 export function isHistoryTour(t: Tour, afterDays: number) {
   const ed = toDate(t.end_date)
   return !!ed && today0() > addDays(ed, afterDays)
-}
-
-function hashStr(x: string) { let h = 0; for (let i = 0; i < x.length; i++) { h = ((h << 5) - h) + x.charCodeAt(i); h |= 0 } return h }
-
-export function rosterOf(t: Tour) {
-  return (ROSTER_SEED[t.id] || []).map((m, i) => ({
-    ...m,
-    code: `${tourBatch(t)}_${String(i + 1).padStart(3, '0')}`,
-    loginId: m.email,
-    loginPw: m.phone || 'TA' + String(Math.abs(hashStr(m.email))).slice(0, 6),
-    pwSource: m.phone ? '電話' : '系統自訂',
-  }))
 }
 
 export const avatarUrl = (name?: string) =>

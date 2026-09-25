@@ -1,9 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTitle } from '../../lib/useTitle'
+import { ConfirmHost, Toaster } from '../../components'
 import PortalGate from '../auth/PortalGate'
 import './admin.css'
 import Layout from './Layout'
-import { AdminProvider } from './store'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Tours from './pages/Tours'
@@ -26,31 +26,31 @@ export default function AdminApp() {
   return (
     <PortalGate role="admin">
       <div className="portal-admin">
-        <AdminProvider>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="users" element={<Users />} />
-              <Route path="tours" element={<Tours />} />
-              <Route path="orders" element={<Orders />} />
-              <Route path="vendors" element={<Vendors />} />
-              <Route path="vendors/:vendorId/products" element={<Products />} />
-              <Route path="products" element={<Products />} />
-              <Route path="places" element={<Places />} />
-              <Route path="announcements" element={<Announcements />} />
-              <Route path="campaigns" element={<Campaigns />} />
-              <Route path="bookings" element={<Bookings />} />
-              <Route path="reviews" element={<Reviews />} />
-              <Route path="receivable" element={<Receivable />} />
-              <Route path="stats" element={<Stats />} />
-              <Route path="tracking" element={<Tracking />} />
-              <Route path="sales" element={<Sales />} />
-              <Route path="ai" element={<AiChat />} />
-              <Route path="password" element={<Password />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </Route>
-          </Routes>
-        </AdminProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="users" element={<Users />} />
+            <Route path="tours" element={<Tours />} />
+            <Route path="orders" element={<Orders />} />
+            <Route path="vendors" element={<Vendors />} />
+            <Route path="vendors/:vendorId/products" element={<Products />} />
+            <Route path="products" element={<Products />} />
+            <Route path="places" element={<Places />} />
+            <Route path="announcements" element={<Announcements />} />
+            <Route path="campaigns" element={<Campaigns />} />
+            <Route path="bookings" element={<Bookings />} />
+            <Route path="reviews" element={<Reviews />} />
+            <Route path="receivable" element={<Receivable />} />
+            <Route path="stats" element={<Stats />} />
+            <Route path="tracking" element={<Tracking />} />
+            <Route path="sales" element={<Sales />} />
+            <Route path="ai" element={<AiChat />} />
+            <Route path="password" element={<Password />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Route>
+        </Routes>
+        <Toaster />
+        <ConfirmHost />
       </div>
     </PortalGate>
   )

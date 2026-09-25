@@ -1,9 +1,9 @@
 import { Fragment, useState } from 'react'
-import { Icon } from '../../../components'
+import { Icon, QueryState } from '../../../components'
 import { fmt, includesQ } from '../../../lib/utils'
-import { api } from '../../../api/partner'
+import { mock } from '../../../api/partner'
 import { profitOf, shippedTotals } from '../income'
-import { usePartner } from '../store'
+import { useIncome } from '../queries'
 import type { IncomeCat, IncomeRow } from '../../../api/types/partner'
 
 type GroupBy = 'product' | 'tour' | 'date'
@@ -11,14 +11,18 @@ const GROUP_LABEL: Record<GroupBy, string> = { product: '商品', tour: '團名'
 
 /* 我的收入：依商品 / 團名 / 日期檢視已出貨的銷售額與利潤 */
 export default function Income() {
-  const { data } = usePartner()
+  const income = useIncome()
+  return <QueryState queries={[income]}>{() => <IncomeView income={income.data!} />}</QueryState>
+}
+
+function IncomeView({ income }: { income: Record<IncomeCat, IncomeRow[]> }) {
   const [cat, setCat] = useState<IncomeCat>('souvenir')
   const [groupBy, setGroupBy] = useState<GroupBy>('product')
   const [shippedOnly, setShippedOnly] = useState(true)
   const [q, setQ] = useState('')
   const [demoEmpty, setDemoEmpty] = useState(false)
 
-  const source = demoEmpty ? [] : data.income[cat]
+  const source = demoEmpty ? [] : income[cat]
   const rows = source.filter((r) => (!shippedOnly || r.shipped) && includesQ([r.product, r.tour], q))
   const totals = shippedTotals(rows)
 
@@ -36,7 +40,7 @@ export default function Income() {
           <div><h1>我的收入 <span className="en">My Income</span></h1><p>依商品、依團名、依日期檢視已出貨的銷售額與利潤</p></div>
         </div>
 
-        {api.mock && (
+        {mock && (
           <div className="demo-banner">
             <Icon name="flask" /><span><b>展示模式</b> — 尚未連接後端收入資料，以下為範例。</span>
             <button className="btn btn-ghost btn-sm" onClick={() => setDemoEmpty(!demoEmpty)}>{demoEmpty ? '載入範例資料' : '切換空狀態'}</button>

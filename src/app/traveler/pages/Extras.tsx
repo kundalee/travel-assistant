@@ -1,23 +1,28 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { addLine, CartBar, cartCount, CartModal, Chips, changeLineQty, Empty, Icon, Tabs, toast } from '../../../components'
+import { addLine, AsyncButton, CartBar, cartCount, CartModal, changeLineQty, Chips, Empty, Icon, QueryState, Tabs, toast } from '../../../components'
 import { ostatusClass, STATUS_ALL, type OrderStatus } from '../../../lib/orders'
-import { fmt, uid } from '../../../lib/utils'
+import { fmt } from '../../../lib/utils'
 import { AlbumModal, BoutiqueCard, GroupBuyCard, NoticeCard, Screen, SubHead } from '../components'
-import { useTraveler } from '../store'
+import {
+  useBoutique, useGroupBuy, useHealth, useHistoryOrders, useHistoryTours, useMarkAllRead, useNotices, useNotifications, usePlaceGroupBuy, useUploadVitals,
+} from '../queries'
+import { useGbCart } from '../store'
 import type { GroupBuyItem, NoticeType, Vitals } from '../../../api/types/traveler'
 
 /* 公告：/traveler/notices?tab=（開啟時將通知標為已讀） */
 export function Notices() {
-  const { data, commit } = useTraveler()
+  const notices = useNotices()
+  const notis = useNotifications()
+  const markAll = useMarkAllRead()
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as NoticeType) || '每日公告'
-  const list = data.notices.filter((n) => n.type === tab)
-  const hasUnread = data.notis.some((n) => !n.read)
+  const hasUnread = !!notis.data?.some((n) => !n.read)
+  const markAllRead = markAll.mutate
 
   useEffect(() => {
-    if (hasUnread) commit((d) => { d.notis.forEach((n) => { n.read = true }) }, { type: 'markNotisRead' })
-  }, [hasUnread, commit])
+    if (hasUnread) markAllRead()
+  }, [hasUnread, markAllRead])
 
   return (
     <Screen>
@@ -25,7 +30,10 @@ export function Notices() {
       <div className="pad">
         <Tabs<NoticeType> value={tab} onChange={(t) => setParams({ tab: t }, { replace: true })} tabs={[['每日公告', '每日公告'], ['一般公告', '一般公告']]} />
         <p className="hint" style={{ marginBottom: '0.8rem' }}>{tab === '每日公告' ? '由領隊導遊發佈' : '由旅行社公司發佈'}</p>
-        <div className="stack">{list.length ? list.map((n) => <NoticeCard key={n.title} n={n} />) : <Empty icon="speakerphone" text={`目前沒有${tab}`} />}</div>
+        <QueryState queries={[notices]}>{() => {
+          const list = notices.data!.filter((n) => n.type === tab)
+          return <div className="stack">{list.length ? list.map((n) => <NoticeCard key={n.title} n={n} />) : <Empty icon="speakerphone" text={`目前沒有${tab}`} />}</div>
+        }}</QueryState>
       </div>
     </Screen>
   )
@@ -35,7 +43,8 @@ export function Notices() {
 const MAP_POINTS: [number, number][] = [[18, 70], [35, 48], [58, 58], [78, 32]]
 
 export function Epidemic() {
-  const { data, commit } = useTraveler()
+  const health = useHealth()
+  const uploadVitals = useUploadVitals()
   const [vitals, setVitals] = useState<Vitals>({ temp: 36.5, bp: '118/76' })
   const [pending, setPending] = useState<Vitals[]>([])
   const hot = vitals.temp >= 37.5
@@ -50,11 +59,13 @@ export function Epidemic() {
     toast(v.temp >= 37.5 ? '體溫偏高，請留意並通知領隊' : '量測完成', v.temp >= 37.5 ? 'alert-triangle' : 'device-watch')
   }
 
-  function upload() {
+  /* 回傳成功才清除暫存；失敗時保留，可再試 */
+  async function upload() {
     if (!pending.length) return toast('沒有待回傳的資料', 'cloud-check')
     const records = pending
-    setPending([])
-    commit(() => {}, { type: 'uploadVitals', records }, `已回傳 ${records.length} 筆量測資料至後台`, 'cloud-upload')
+    const r = await uploadVitals.mutateAsync(records)
+    setPending((p) => p.slice(records.length))
+    toast(`已回傳 ${r.count} 筆量測資料至後台`, 'cloud-upload')
   }
 
   return (
@@ -74,18 +85,18 @@ export function Epidemic() {
             </svg>
             {MAP_POINTS.map(([x, y], i) => <div key={i} className={`map-pin ${i === MAP_POINTS.length - 1 ? 'me' : ''}`} style={{ left: `${x}%`, top: `${y}%` }} />)}
           </div>
-          {data.trace.map((t) => <div className="trace-row" key={t.t}><span className="t">{t.t}</span><Icon name="map-pin" className="accent" /><span>{t.place}</span></div>)}
+          <QueryState queries={[health]}>{() => health.data!.trace.map((t) => <div className="trace-row" key={t.t}><span className="t">{t.t}</span><Icon name="map-pin" className="accent" /><span>{t.place}</span></div>)}</QueryState>
         </div>
 
         <div className="epi-card">
           <div className="epi-head"><div className="epi-ico"><Icon name="users-group" /></div>
             <div style={{ flex: 1 }}><h4>人際關係追蹤</h4><p>同團接觸者與鄰近旅團紀錄</p></div></div>
-          {data.contacts.map((c) => (
+          <QueryState queries={[health]}>{() => health.data!.contacts.map((c) => (
             <div className="trace-row" key={c.name}>
               <Icon name="users" className="accent" />
               <span style={{ flex: 1 }}>{c.name}<div className="trace-note">{c.note}</div></span><b>{c.n}</b>
             </div>
-          ))}
+          ))}</QueryState>
         </div>
 
         <div className="epi-card">
@@ -97,7 +108,7 @@ export function Epidemic() {
           </div>
           <div className="action-2" style={{ marginTop: 12 }}>
             <button className="btn btn-ghost btn-sm" onClick={measure}><Icon name="device-watch" />量測</button>
-            <button className="btn btn-primary btn-sm" onClick={upload}><Icon name="cloud-upload" />回傳後台</button>
+            <AsyncButton className="btn btn-primary btn-sm" onClick={upload}><Icon name="cloud-upload" />回傳後台</AsyncButton>
           </div>
           <p className="hint" style={{ marginTop: 8 }}>
             {pending.length ? `目前無網路，已暫存 ${pending.length} 筆量測資料，恢復連線後會自動回傳後台。` : '量測資料會自動回傳後台。'}
@@ -110,7 +121,9 @@ export function Epidemic() {
 
 /* 團購搶好康（購物車跨畫面保留） */
 export function GroupBuy() {
-  const { data, commit, gbCart, setGbCart } = useTraveler()
+  const groupbuy = useGroupBuy()
+  const place = usePlaceGroupBuy()
+  const [gbCart, setGbCart] = useGbCart()
   const [open, setOpen] = useState(false)
 
   function add(g: GroupBuyItem) {
@@ -118,15 +131,13 @@ export function GroupBuy() {
     toast('已加入購物車：' + g.name, 'shopping-cart-plus')
   }
 
-  function confirm() {
+  async function confirm() {
     if (!gbCart.length) return toast('購物車是空的', 'alert-circle')
     const n = cartCount(gbCart)
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
-    const rows = gbCart.map((c) => ({ id: uid('g') + c.id, product: c.name, tour: '團購搶好康', date, amount: c.price * c.qty, status: '未付款' as const }))
-    const items = gbCart.map(({ id, qty }) => ({ id, qty }))
-    setGbCart(() => [])
+    await place.mutateAsync(gbCart.map(({ id, qty }) => ({ id, qty })))
+    toast(`已確認下單 ${n} 件，請至歷史訂單完成付款`)
+    setGbCart([])
     setOpen(false)
-    commit((d) => { d.historyOrders.unshift(...rows) }, { type: 'placeGroupBuy', items }, `已確認下單 ${n} 件，請至歷史訂單完成付款`)
   }
 
   return (
@@ -134,25 +145,25 @@ export function GroupBuy() {
       <SubHead title="團購搶好康" back="/traveler" />
       <div className="pad">
         <p className="page-sub">限時團購價，於集結地點取貨或宅配回台。</p>
-        {data.groupbuy.map((g) => <GroupBuyCard key={g.id} g={g} onAdd={() => add(g)} />)}
+        <QueryState queries={[groupbuy]}>{() => groupbuy.data!.map((g) => <GroupBuyCard key={g.id} g={g} onAdd={() => add(g)} />)}</QueryState>
       </div>
       <CartBar cart={gbCart} onOpen={() => setOpen(true)} />
       {open && (
         <CartModal title="團購購物車" sub="團購搶好康下單" cart={gbCart} onQty={(id, d) => setGbCart((c) => changeLineQty(c, id, d))}
-          onCancel={() => { setGbCart(() => []); setOpen(false); toast('已取消下單', 'trash') }} onConfirm={confirm} onClose={() => setOpen(false)} />
+          onCancel={() => { setGbCart([]); setOpen(false); toast('已取消下單', 'trash') }} onConfirm={confirm} onClose={() => setOpen(false)} />
       )}
     </Screen>
   )
 }
 
 export function BoutiquePage() {
-  const { data } = useTraveler()
+  const boutique = useBoutique()
   return (
     <Screen>
       <SubHead title="精品好物分享" back="/traveler" />
       <div className="pad">
         <p className="page-sub">領隊嚴選商品內容，可透過外接購物系統購買。</p>
-        {data.boutique.map((b) => <BoutiqueCard key={b.name} b={b} />)}
+        <QueryState queries={[boutique]}>{() => boutique.data!.map((b) => <BoutiqueCard key={b.name} b={b} />)}</QueryState>
       </div>
     </Screen>
   )
@@ -160,21 +171,23 @@ export function BoutiquePage() {
 
 /* 歷史訂單（5 狀態） */
 export function Orders() {
-  const { data } = useTraveler()
+  const orders = useHistoryOrders()
   const [filter, setFilter] = useState<OrderStatus | '全部'>('全部')
-  const list = data.historyOrders.filter((o) => filter === '全部' || o.status === filter)
   return (
     <Screen>
       <SubHead title="歷史訂單" back="/traveler/me" />
       <div className="pad">
         <Chips<OrderStatus | '全部'> style={{ marginBottom: '0.9rem' }} value={filter} onChange={setFilter}
           items={(['全部', ...STATUS_ALL] as (OrderStatus | '全部')[]).map((s) => [s, s])} />
-        {list.length ? list.map((o) => (
+        <QueryState queries={[orders]}>{() => {
+          const list = orders.data!.filter((o) => filter === '全部' || o.status === filter)
+          return list.length ? list.map((o) => (
           <div className={`order-row ${o.status === '已取消' ? 'cancelled' : ''}`} key={o.id}>
             <div className="order-main"><div className="order-name">{o.product}</div><div className="order-sub">{o.date} · {o.tour} · NT$ {fmt(o.amount)}</div></div>
             <span className={`ostatus ${ostatusClass(o.status)}`}>{o.status}</span>
           </div>
-        )) : <Empty icon="receipt-off" text="查無此狀態訂單" />}
+          )) : <Empty icon="receipt-off" text="查無此狀態訂單" />
+        }}</QueryState>
       </div>
     </Screen>
   )
@@ -182,19 +195,19 @@ export function Orders() {
 
 /* 歷史行程（旅遊回憶） */
 export function History() {
-  const { data } = useTraveler()
+  const historyTours = useHistoryTours()
   const [album, setAlbum] = useState<string | null>(null)
   return (
     <Screen>
       <SubHead title="歷史行程" back="/traveler/me" />
       <div className="pad">
-        {data.historyTours.map((t) => (
+        <QueryState queries={[historyTours]}>{() => historyTours.data!.map((t) => (
           <div className="hist-card" key={t.title}>
             <img src={t.img} alt="" loading="lazy" />
             <div style={{ flex: 1 }}><h4>{t.title}</h4><div className="meta-row" style={{ marginTop: 3 }}><Icon name="calendar" />{t.dates}</div></div>
             <button className="btn btn-ghost btn-sm" onClick={() => setAlbum(t.title)}><Icon name="camera-heart" />旅遊回憶</button>
           </div>
-        ))}
+        ))}</QueryState>
       </div>
       {album && <AlbumModal name={album} onClose={() => setAlbum(null)} />}
     </Screen>

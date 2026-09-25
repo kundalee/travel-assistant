@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { KIND_TW, PAYFLOW, PAYLABEL, STATUS_ALL } from '../../../api/mocks/admin'
-import { useAdmin } from '../store'
+import { useAdminData, useCrud } from '../queries'
 import type { Order, OrderStatus } from '../../../api/types/admin'
 import { fmt, ostatusClass } from '../utils'
-import { Icon, Modal } from '../../../components'
+import { AsyncButton, Icon, Modal, toast } from '../../../components'
 
 export function OrderRow({ o, onOpen }: { o: Order; onOpen: (id: string) => void }) {
   return (
@@ -23,8 +23,9 @@ export function OrderRow({ o, onOpen }: { o: Order; onOpen: (id: string) => void
 
 /* 父元件以 key={id} 掛載，確保切換訂單時重設狀態 */
 export function OrderModal({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, update, toast } = useAdmin()
-  const o = data.orders.find((x) => x.id === id)
+  const { data } = useAdminData('orders')
+  const { update } = useCrud()
+  const o = data?.orders.find((x) => x.id === id)
   const [status, setStatus] = useState<OrderStatus>(o?.status || '未付款')
   const [reconciled, setReconciled] = useState(!!o?.reconciled)
 
@@ -47,9 +48,8 @@ export function OrderModal({ id, onClose }: { id: string; onClose: () => void })
     toast(!reconciled ? '已勾稽 ✓' : '已取消勾稽')
   }
 
-  function save() {
-    onClose()
-    update('orders', id, { status, reconciled }, '訂單已更新')
+  async function save() {
+    if (await update('orders', id, { status, reconciled }, '訂單已更新')) onClose()
   }
 
   return (
@@ -63,7 +63,7 @@ export function OrderModal({ id, onClose }: { id: string; onClose: () => void })
       </div>
       <div className="action-2">
         <button className="btn btn-ghost" onClick={toggleRecon}><Icon name="checkbox" />{reconciled ? '取消勾稽' : '勾稽'}</button>
-        <button className="btn btn-primary" onClick={save}><Icon name="check" />更新</button>
+        <AsyncButton className="btn btn-primary" onClick={save}><Icon name="check" />更新</AsyncButton>
       </div>
     </Modal>
   )

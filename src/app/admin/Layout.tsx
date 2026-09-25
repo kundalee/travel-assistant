@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Icon, type IconName } from '../../components'
 import { useAuth } from '../auth/AuthProvider'
-import { useAdmin } from './store'
+import { mock } from '../../api/admin'
 
 type NavItem = [path: string, icon: IconName, label: string]
 
@@ -35,7 +35,6 @@ const NAV: [group: string, items: NavItem[]][] = [
 ]
 
 export default function Layout() {
-  const { mock } = useAdmin()
   const { user, logout } = useAuth()
   const nav = useNavigate()
   const { pathname } = useLocation()

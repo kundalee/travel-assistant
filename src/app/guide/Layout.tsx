@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Icon, type IconName } from '../../components'
-import { useGuide } from './store'
+import { useNotifications, useProfile } from './queries'
 
 /* 底部分頁；match 為該分頁涵蓋的子畫面路徑前綴 */
 const TABS: { path: string; icon: IconName; label: string; match: string[] }[] = [
@@ -13,14 +13,14 @@ const TABS: { path: string; icon: IconName; label: string; match: string[] }[] =
 ]
 
 export default function Layout() {
-  const { user, ready, data } = useGuide()
+  const profile = useProfile()
+  const notis = useNotifications()
   const nav = useNavigate()
   const { pathname } = useLocation()
 
   useEffect(() => { window.scrollTo({ top: 0 }) }, [pathname])
 
-  if (!ready || !user) return null
-  const unread = data.notis.filter((n) => !n.read).length
+  const unread = notis.data?.filter((n) => !n.read).length ?? 0
   const isActive = (t: (typeof TABS)[number]) =>
     t.match.length ? t.match.some((m) => pathname.startsWith(m)) : pathname === '/guide' || pathname === '/guide/'
 
@@ -35,7 +35,7 @@ export default function Layout() {
           <button className="icon-btn" onClick={() => nav('/guide/notifications')} aria-label="通知">
             <Icon name="bell" />{unread > 0 && <span className="badge-dot">{unread}</span>}
           </button>
-          <img className="g-avatar" src={user.profile.avatar} alt="我" onClick={() => nav('/guide/me')} />
+          {profile.data && <img className="g-avatar" src={profile.data.avatar} alt="我" onClick={() => nav('/guide/me')} />}
         </div>
       </header>
 

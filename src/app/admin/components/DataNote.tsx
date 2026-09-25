@@ -1,9 +1,8 @@
-import { useAdmin } from '../store'
+import { mock } from '../../../api/admin'
 import { Icon } from '../../../components'
 
 /* 資料來源註記（展示資料 / 後端） */
 export function DataNote() {
-  const { mock } = useAdmin()
   return (
     <div className="dt-count">
       <Icon name={mock ? 'flask' : 'cloud'} />

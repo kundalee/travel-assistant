@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Empty, FlightModal, Icon, NotesModal, toast, VideoModal } from '../../../components'
+import { Empty, FlightModal, Icon, NotesModal, QueryState, toast, VideoModal } from '../../../components'
 import { MapModal, MemoryModal, PageTitle, QrModal, ReviewModal, Screen } from '../components'
-import { useTraveler } from '../store'
+import { type TripsData, useTrips } from '../queries'
 import type { CompletedTrip, OngoingTrip, UpcomingTrip } from '../../../api/types/traveler'
 
 type TripTab = 'upcoming' | 'ongoing' | 'completed'
@@ -92,17 +92,17 @@ export function MyTourCard(props: CardProps) {
                 <Icon name="star" />{props.trip.reviewed ? '已完成評價' : '撰寫評價'}
               </button>
             </div>
-            {dialog === 'memory' && <MemoryModal tourTitle={trip.title} onClose={close} />}
+            {dialog === 'memory' && <MemoryModal tourId={trip.tourId} tourTitle={trip.title} onClose={close} />}
           </>
         )}
-        {dialog === 'review' && <ReviewModal tourTitle={trip.title} onClose={close} />}
+        {dialog === 'review' && <ReviewModal tourId={trip.tourId} tourTitle={trip.title} onClose={close} />}
       </div>
     </div>
   )
 }
 
 export default function MyTours() {
-  const { data } = useTraveler()
+  const trips = useTrips()
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as TripTab) || 'upcoming'
 
@@ -115,13 +115,19 @@ export default function MyTours() {
             <button key={t} className={`dtab ${tab === t ? 'active' : ''}`} onClick={() => setParams({ tab: t }, { replace: true })}>{TAB_LABEL[t]}</button>
           ))}
         </div>
-        <div className="stack">
-          {!data[tab].length && <Empty icon="calendar" text={`目前沒有${TAB_LABEL[tab]}的行程`} hint={tab === 'upcoming' ? '快去探索心動的行程吧！' : '行程結束後會顯示於此'} />}
-          {tab === 'upcoming' && data.upcoming.map((t) => <MyTourCard key={t.tourId} kind="upcoming" trip={t} />)}
-          {tab === 'ongoing' && data.ongoing.map((t) => <MyTourCard key={t.tourId} kind="ongoing" trip={t} />)}
-          {tab === 'completed' && data.completed.map((t) => <MyTourCard key={t.tourId} kind="completed" trip={t} />)}
-        </div>
+        <QueryState queries={[trips]}>{() => <TripList data={trips.data!} tab={tab} />}</QueryState>
       </div>
     </Screen>
+  )
+}
+
+function TripList({ data, tab }: { data: TripsData; tab: TripTab }) {
+  return (
+    <div className="stack">
+      {!data[tab].length && <Empty icon="calendar" text={`目前沒有${TAB_LABEL[tab]}的行程`} hint={tab === 'upcoming' ? '快去探索心動的行程吧！' : '行程結束後會顯示於此'} />}
+      {tab === 'upcoming' && data.upcoming.map((t) => <MyTourCard key={t.tourId} kind="upcoming" trip={t} />)}
+      {tab === 'ongoing' && data.ongoing.map((t) => <MyTourCard key={t.tourId} kind="ongoing" trip={t} />)}
+      {tab === 'completed' && data.completed.map((t) => <MyTourCard key={t.tourId} kind="completed" trip={t} />)}
+    </div>
   )
 }

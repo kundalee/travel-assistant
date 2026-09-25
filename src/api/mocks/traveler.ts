@@ -118,12 +118,12 @@ export const SAMPLE: TravelerData = {
     ] },
   },
   album: [
-    { src: IMG.hualien, cap: '太魯閣國家公園 · 2026/05/06', up: '導遊 李美麗', by: 'guide' },
-    { src: IMG.kyoto, cap: '清水寺參道', up: '導遊 李美麗', by: 'guide' },
-    { src: IMG.tokyo, cap: '團體合照', up: '我', by: 'mine' },
-    { src: IMG.hokkaido, cap: '山谷雲海', up: '導遊 李美麗', by: 'guide' },
-    { src: IMG.seoul, cap: '午餐時光', up: '我', by: 'mine' },
-    { src: IMG.bangkok, cap: '河濱夜景', up: '團員 林小美', by: 'guide' },
+    { id: 'ph1', src: IMG.hualien, cap: '太魯閣國家公園 · 2026/05/06', up: '導遊 李美麗', by: 'guide' },
+    { id: 'ph2', src: IMG.kyoto, cap: '清水寺參道', up: '導遊 李美麗', by: 'guide' },
+    { id: 'ph3', src: IMG.tokyo, cap: '團體合照', up: '我', by: 'mine' },
+    { id: 'ph4', src: IMG.hokkaido, cap: '山谷雲海', up: '導遊 李美麗', by: 'guide' },
+    { id: 'ph5', src: IMG.seoul, cap: '午餐時光', up: '我', by: 'mine' },
+    { id: 'ph6', src: IMG.bangkok, cap: '河濱夜景', up: '團員 林小美', by: 'guide' },
   ],
 
   notices: [
@@ -134,9 +134,9 @@ export const SAMPLE: TravelerData = {
     { type: '一般公告', kind: '注意事項', title: '旅遊平安保險已投保', body: '本團已投保旅遊平安險與不便險，理賠說明請洽客服。', by: '範例旅行社', time: '2 天前' },
   ],
   boutique: [
-    { name: '京都西陣織絲巾', price: 1680, emo: '🧣', desc: '職人手織，領隊嚴選' },
-    { name: '宇治抹茶精選組', price: 1250, emo: '🍵', desc: '宇治老舖直送' },
-    { name: '清水燒茶杯對組', price: 2200, emo: '🍶', desc: '回台後宅配到府' },
+    { name: '京都西陣織絲巾', price: 1680, emo: '🧣', desc: '職人手織，領隊嚴選', url: 'https://shop.example.com/items/nishijin-scarf' },
+    { name: '宇治抹茶精選組', price: 1250, emo: '🍵', desc: '宇治老舖直送', url: 'https://shop.example.com/items/uji-matcha-set' },
+    { name: '清水燒茶杯對組', price: 2200, emo: '🍶', desc: '回台後宅配到府', url: 'https://shop.example.com/items/kiyomizu-cups' },
   ],
   groupbuy: [
     { id: 'g1', name: '宇治抹茶精選組', emo: '🍵', price: 1125, orig: 1250, desc: '團購 9 折 · 滿三組免運' },
