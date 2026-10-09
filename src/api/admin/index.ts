@@ -14,14 +14,15 @@ import { announcementsApi } from './announcements'
 import { campaignsApi } from './campaigns'
 import { productsApi } from './products'
 import { placesApi } from './places'
-import { vendorsApi } from './vendors'
+import { shopsApi } from './shops'
+import { shopProductsApi } from './shopProducts'
 import { salesApi } from './sales'
 import { trackingApi } from './tracking'
 import { reportsApi } from './reports'
 import { aiApi } from './ai'
 
 export {
-  usersApi, toursApi, ordersApi, bookingsApi, reviewsApi, announcementsApi, campaignsApi, productsApi, placesApi, vendorsApi,
+  usersApi, toursApi, ordersApi, bookingsApi, reviewsApi, announcementsApi, campaignsApi, productsApi, placesApi, shopsApi, shopProductsApi,
   salesApi, trackingApi, reportsApi, aiApi,
 }
 
@@ -38,7 +39,7 @@ type CrudApi<T> = {
 
 export const editable = {
   users: usersApi, tours: toursApi, orders: ordersApi, bookings: bookingsApi, announcements: announcementsApi,
-  products: productsApi, places: placesApi, vendors: vendorsApi,
+  products: productsApi, places: placesApi, shops: shopsApi,
 } satisfies { [K in keyof AdminCollections]?: CrudApi<AdminCollections[K][number]> }
 
 export type EditableKey = keyof typeof editable

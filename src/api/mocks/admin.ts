@@ -1,5 +1,5 @@
 /* ═══════ 常數與範例資料（未連線 / 展示模式使用）═══════ */
-import type { AdminCollections, AnnCat, Receivable, Stats, Vital, Zone, ProductKind, Role, RosterMember, TourStatus } from '../types/admin'
+import type { AdminCollections, AnnCat, ProductKind, Receivable, Role, RosterMember, SettlementCycle, Stats, TourStatus, Vital, Zone } from '../types/admin'
 
 export const DEMO = { email: 'admin@example.com', pw: 'admin1234' }
 
@@ -28,8 +28,8 @@ export const KIND_KEY: Record<string, ProductKind> = { 紀念商品: 'souvenir',
 export const ORDER_KINDS: [ProductKind | 'all', string][] = [['all', '全部'], ['souvenir', '紀念商品'], ['deal', '團購商品'], ['boutique', '精品好物']]
 
 export const V_KINDS = ['紀念商品', '精品好物'] /* 商品分類 — 可複選（團購商品另由團購搶好康管理）*/
-export const V_PAY = ['月結30天', '貨到現金', '其它'] /* 結帳方式 — 單選 */
-export const V_SHIP = ['店面', '指定地點'] /* 交貨方式 — 單選 */
+/* 結算週期 */
+export const SETTLEMENT_TW: Record<SettlementCycle, string> = { per_tour: '每團結算', monthly: '每月結算' }
 
 export const ANN_TYPES: Record<AnnCat, string[]> = { 每日公告: ['晨喚', '集合時間與地點', '行程概述'], 一般公告: ['注意事項', '旅行社公告'] }
 
@@ -77,18 +77,18 @@ export const SAMPLE: AdminCollections = {
     { id: 'c2', channel: 'sms', title: '嵐山竹細工快閃', published: true },
   ],
   products: [
-    { id: 'p1', name: '八橋餅禮盒', price_twd: 480, cost: 300, bonus_twd: 60, kind: 'souvenir', kinds: ['紀念商品'], cat: '其它優選商品', vendor_id: 'v1' },
-    { id: 'p2', name: '宇治抹茶精選組', price_twd: 1250, cost: 780, bonus_twd: 150, kind: 'deal', kinds: ['精品好物'], cat: '養生素食', vendor_id: 'v2' },
-    { id: 'p3', name: '京都西陣織絲巾', price_twd: 1680, cost: 1050, bonus_twd: 200, kind: 'boutique', kinds: ['精品好物'], cat: '生活用品', vendor_id: 'v1' },
-    { id: 'p4', name: '宇治抹茶粉', price_twd: 650, bonus_twd: 78, cost: 403, kinds: ['紀念商品'], vendor_id: 'v3', kind: 'souvenir', cat: '養生素食' },
-    { id: 'p5', name: '竹細工茶筒', price_twd: 1200, bonus_twd: 144, cost: 744, kinds: ['紀念商品'], vendor_id: 'v1', kind: 'souvenir', cat: '生活用品' },
-    { id: 'p6', name: '京漬物三味', price_twd: 540, bonus_twd: 65, cost: 335, kinds: ['紀念商品'], vendor_id: 'v1', kind: 'souvenir', cat: '農產蔬果' },
-    { id: 'p7', name: '北海道海鮮干貝', price_twd: 980, bonus_twd: 118, cost: 608, kinds: ['紀念商品'], vendor_id: 'v3', kind: 'souvenir', cat: '海鮮水產' },
-    { id: 'p8', name: '養生黑糖薑茶', price_twd: 360, bonus_twd: 43, cost: 223, kinds: ['紀念商品'], vendor_id: 'v1', kind: 'souvenir', cat: '養生素食' },
-    { id: 'p9', name: '十勝鮮乳酪', price_twd: 420, bonus_twd: 50, cost: 260, kinds: ['紀念商品'], vendor_id: 'v1', kind: 'souvenir', cat: '奶蛋肉品' },
-    { id: 'p10', name: '京友禪手帕', price_twd: 320, bonus_twd: 38, cost: 198, kinds: ['紀念商品'], vendor_id: 'v3', kind: 'souvenir', cat: '生活用品' },
-    { id: 'p11', name: '信州蘋果乾', price_twd: 280, bonus_twd: 34, cost: 174, kinds: ['紀念商品'], vendor_id: 'v2', kind: 'souvenir', cat: '農產蔬果' },
-    { id: 'p12', name: '清酒一合瓶', price_twd: 720, bonus_twd: 86, cost: 446, kinds: ['紀念商品'], vendor_id: 'v1', kind: 'souvenir', cat: '其它優選商品' },
+    { id: 'p1', name: '八橋餅禮盒', price_twd: 480, cost: 300, bonus_twd: 60, kind: 'souvenir', kinds: ['紀念商品'], cat: '其它優選商品', vendor_id: '1' },
+    { id: 'p2', name: '宇治抹茶精選組', price_twd: 1250, cost: 780, bonus_twd: 150, kind: 'deal', kinds: ['精品好物'], cat: '養生素食', vendor_id: '2' },
+    { id: 'p3', name: '京都西陣織絲巾', price_twd: 1680, cost: 1050, bonus_twd: 200, kind: 'boutique', kinds: ['精品好物'], cat: '生活用品', vendor_id: '1' },
+    { id: 'p4', name: '宇治抹茶粉', price_twd: 650, bonus_twd: 78, cost: 403, kinds: ['紀念商品'], vendor_id: '3', kind: 'souvenir', cat: '養生素食' },
+    { id: 'p5', name: '竹細工茶筒', price_twd: 1200, bonus_twd: 144, cost: 744, kinds: ['紀念商品'], vendor_id: '1', kind: 'souvenir', cat: '生活用品' },
+    { id: 'p6', name: '京漬物三味', price_twd: 540, bonus_twd: 65, cost: 335, kinds: ['紀念商品'], vendor_id: '1', kind: 'souvenir', cat: '農產蔬果' },
+    { id: 'p7', name: '北海道海鮮干貝', price_twd: 980, bonus_twd: 118, cost: 608, kinds: ['紀念商品'], vendor_id: '3', kind: 'souvenir', cat: '海鮮水產' },
+    { id: 'p8', name: '養生黑糖薑茶', price_twd: 360, bonus_twd: 43, cost: 223, kinds: ['紀念商品'], vendor_id: '1', kind: 'souvenir', cat: '養生素食' },
+    { id: 'p9', name: '十勝鮮乳酪', price_twd: 420, bonus_twd: 50, cost: 260, kinds: ['紀念商品'], vendor_id: '1', kind: 'souvenir', cat: '奶蛋肉品' },
+    { id: 'p10', name: '京友禪手帕', price_twd: 320, bonus_twd: 38, cost: 198, kinds: ['紀念商品'], vendor_id: '3', kind: 'souvenir', cat: '生活用品' },
+    { id: 'p11', name: '信州蘋果乾', price_twd: 280, bonus_twd: 34, cost: 174, kinds: ['紀念商品'], vendor_id: '2', kind: 'souvenir', cat: '農產蔬果' },
+    { id: 'p12', name: '清酒一合瓶', price_twd: 720, bonus_twd: 86, cost: 446, kinds: ['紀念商品'], vendor_id: '1', kind: 'souvenir', cat: '其它優選商品' },
   ],
 
   /* 以下目前僅有範例資料（尚未對應雲端資料表） */
@@ -100,10 +100,11 @@ export const SAMPLE: AdminCollections = {
     { id: 'pl3', name: '祇園 · 花見小路', lat: 35.003611, lng: 135.775, desc: '傳統花街，京漬物、和風扇與清酒名店林立。', souvenirs: [] },
     { id: 'pl4', name: '淺草寺 · 雷門', lat: 35.714765, lng: 139.796655, desc: '東京最古老寺廟，仲見世通商店街紀念品豐富。', souvenirs: [] },
   ],
-  vendors: [
-    { id: 'v1', name: '京都物產株式會社', addr: '日本 · 京都市東山區清水 2-1', lat: 34.994856, lng: 135.785046, contact: '山田太郎', phone: '+81-75-123-4567', im: 'LINE: kyoto-bussan', pay: '月結30天', payOther: '', ship: '店面', shipPlace: '', draft: false },
-    { id: 'v2', name: '宇治茶園商事', addr: '日本 · 京都府宇治市宇治蓮華 5', lat: 34.891, lng: 135.807, contact: '鈴木花子', phone: '+81-774-88-1234', im: 'LINE: uji-tea', pay: '貨到現金', payOther: '', ship: '指定地點', shipPlace: '京都站前飯店 · 大廳', draft: false },
-    { id: 'v3', name: '北海道海產直送', addr: '日本 · 北海道札幌市中央區', lat: 43.062, lng: 141.354, contact: '佐藤健', phone: '+81-11-222-3333', im: 'WeChat: hk-seafood', pay: '其它', payOther: '季結・押票 60 天', ship: '指定地點', shipPlace: '機場貨運站', draft: true },
+  /* 支援店家：與後端 ShopRead 相同格式 */
+  shops: [
+    { id: 1, name: '京都物產株式會社', contact_name: '山田太郎', phone: '+81-75-123-4567', email: 'info@kyoto-bussan.jp', address: '東山區清水 2-1', city: '京都', country: '日本', agency_rate: '0.1500', settlement_cycle: 'monthly', is_active: true, place_ids: [], created_at: '2026-01-10T09:00:00Z' },
+    { id: 2, name: '宇治茶園商事', contact_name: '鈴木花子', phone: '+81-774-88-1234', email: null, address: '宇治市宇治蓮華 5', city: '宇治', country: '日本', agency_rate: '0.1200', settlement_cycle: 'per_tour', is_active: true, place_ids: [], created_at: '2026-02-03T09:00:00Z' },
+    { id: 3, name: '北海道海產直送', contact_name: '佐藤健', phone: '+81-11-222-3333', email: null, address: '中央區', city: '札幌', country: '日本', agency_rate: '0.1000', settlement_cycle: 'monthly', is_active: false, place_ids: [], created_at: '2026-03-15T09:00:00Z' },
   ],
   monthly: [
     { month: '2026/07', agency: '範例旅行社', amount: 842000, sent: false },

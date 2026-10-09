@@ -46,7 +46,7 @@ export class ApiError extends Error {
 }
 
 /* 送往真正的後端 */
-async function fetchReal(path: string, method: Method, body: unknown, signal?: AbortSignal) {
+async function fetchReal(path: string, method: Method, body: unknown, signal?: AbortSignal, download?: boolean) {
   const headers: Record<string, string> = {}
   let payload: BodyInit | undefined
   if (body instanceof FormData) payload = body
@@ -56,6 +56,11 @@ async function fetchReal(path: string, method: Method, body: unknown, signal?: A
   }
   if (authToken) headers.Authorization = `Bearer ${authToken}`
   const res = await fetch(BASE_URL + path, { method, signal, headers, body: payload })
+  /* 檔案下載：成功時回傳 { blob, filename }，錯誤時仍為 JSON */
+  if (download && res.ok) {
+    const name = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') ?? '')?.[1]
+    return { status: res.status, data: { blob: await res.blob(), filename: name ? decodeURIComponent(name) : 'download' } }
+  }
   const data: unknown = res.status === 204 ? null : await res.json().catch(() => null)
   return { status: res.status, data }
 }
@@ -63,7 +68,13 @@ async function fetchReal(path: string, method: Method, body: unknown, signal?: A
 /* 由假後端回應（僅在需要時載入） */
 async function fetchFake(endpoint: Endpoint, path: string, params: Record<string, string>, body: unknown) {
   const { handle } = await import('./fake')
-  return handle(endpoint, path, params, body, authToken)
+  const res = await handle(endpoint, path, params, body, authToken)
+  /* 假後端的下載端點回傳 { filename, content, type } → 轉成與真正後端相同的 { blob, filename } */
+  if (endpoint.download && res.status < 400) {
+    const f = res.data as { filename: string; content: string; type: string }
+    return { status: res.status, data: { blob: new Blob([f.content], { type: f.type }), filename: f.filename } }
+  }
+  return res
 }
 
 
@@ -89,12 +100,15 @@ function toFormData(body: object) {
 }
 
 /** 呼叫一個已登記的端點（resource.ts 使用）：以 params 填入路徑；JSON 進、JSON 出；非 2xx 時丟出 ApiError */
-export async function call<T>(endpoint: Endpoint, params: Record<string, string | number> = {}, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const path = fillPath(endpoint.path, params)
+export async function call<T>(endpoint: Endpoint, params: Record<string, string | number | boolean | null | undefined> = {}, body?: unknown, signal?: AbortSignal): Promise<T> {
+  /* 路徑沒用到的參數 → 查詢字串（undefined / null 不送出） */
+  const pathKeys = new Set([...endpoint.path.matchAll(/:(\w+)/g)].map((m) => m[1]))
+  const query = new URLSearchParams(Object.entries(params).flatMap(([k, v]) => (pathKeys.has(k) || v == null ? [] : [[k, String(v)]])))
+  const path = fillPath(endpoint.path, params as Record<string, string | number>) + (query.size ? `?${query}` : '')
   const strParams = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))
   const payload = endpoint.multipart && body && typeof body === 'object' ? toFormData(body) : body
   const fake = isFake(endpoint.group)
-  const { status, data } = fake ? await fetchFake(endpoint, path, strParams, payload) : await fetchReal(path, endpoint.method, payload, signal)
+  const { status, data } = fake ? await fetchFake(endpoint, path, strParams, payload) : await fetchReal(path, endpoint.method, payload, signal, endpoint.download)
 
   if (USE_FAKE) callLog.add({ method: endpoint.method, path, key: endpointKey(endpoint), status, mode: fake ? 'fake' : 'real', at: Date.now() })
   if (status >= 400) throw new ApiError(status, errorMessage(data) || `請求失敗（${status}）`)

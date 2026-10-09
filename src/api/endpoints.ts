@@ -21,6 +21,8 @@ export interface Endpoint {
   crud?: Crud
   /** 請求內容以 multipart/form-data 送出（含檔案） */
   multipart?: boolean
+  /** 回應為檔案（下載）：回傳 { blob, filename } */
+  download?: boolean
 }
 
 /** 群組 → 顯示名稱（依登記順序） */

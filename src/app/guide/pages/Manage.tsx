@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { addLine, AsyncButton, CartBar, cartCount, type CartLine, CartModal, changeLineQty, confirmDialog, Empty, Field, Icon, LocationAccordion, Modal, QueryState, toast } from '../../../components'
+import { addLine, AsyncButton, CartBar, cartCount, type CartLine, CartModal, changeLineQty, confirmDialog, Empty, Field, FileDrop, Icon, LocationAccordion, Modal, QueryState, toast } from '../../../components'
 import { ostatusClass, STATUS_ALL } from '../../../lib/orders'
 import { fmt } from '../../../lib/utils'
 import { OngoingBanner, ReviewCard, SubHead } from '../components'
@@ -16,7 +16,6 @@ const NOTICE_TYPES: NoticeType[] = ['晨喚', '集合時間與地點', '行程�
 /* ── 照片分享 ── */
 function ShareModal({ tour, members, onClose }: { tour: OngoingTour; members: Member[]; onClose: () => void }) {
   const share = useSharePhotos(tour.tourId)
-  const fileRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
   const [scope, setScope] = useState<'all' | 'ind'>('all')
   const [picked, setPicked] = useState<string[]>([])
@@ -35,10 +34,9 @@ function ShareModal({ tour, members, onClose }: { tour: OngoingTour; members: Me
   return (
     <Modal onClose={onClose} title="分享給團員" sub="選擇照片與發佈對象">
       <Field label="選擇照片">
-        <div className="upload-zone" onClick={() => fileRef.current?.click()}>
-          <Icon name="photo-up" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>點擊選擇要分享的照片</p>
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => setFiles([...(e.target.files || [])])} />
-        </div>
+        <FileDrop accept="image/*" multiple onFiles={setFiles}>
+          <Icon name="photo-up" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>拖曳照片到這裡，或點擊選擇</p>
+        </FileDrop>
         {files.length > 0 && <p className="hint">已選擇 {files.length} 張照片</p>}
       </Field>
       <Field label="發佈對象">

@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AsyncButton, Field, Icon, type IconName, QueryState, toast, useBusy } from '../../../components'
+import { AsyncButton, Field, FileDrop, Icon, type IconName, QueryState, toast, useBusy } from '../../../components'
 import { errMsg } from '../../../lib/utils'
 import { authApi } from '../../../api/auth'
 import { mock } from '../../../api/traveler'
@@ -74,7 +74,6 @@ function ProfileForm({ initial }: { initial: TravelerProfile }) {
   const uploadPassport = useUploadPassportPhoto()
   const [f, setF] = useState<TravelerProfile>(initial)
   const [preview, setPreview] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, run] = useBusy()
   const set = (k: keyof TravelerProfile) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
 
@@ -115,10 +114,9 @@ function ProfileForm({ initial }: { initial: TravelerProfile }) {
           <Field label="有效期限"><input type="date" value={f.expiry} onChange={set('expiry')} /></Field>
         </div>
         <Field label="護照照片">
-          <div className="upload-zone" aria-busy={uploading || undefined} onClick={() => !uploading && fileRef.current?.click()}>
-            <Icon name="camera-plus" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>{uploading ? '上傳中…' : '點擊上傳護照個資頁'}</p>
-            <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => pickPassport(e.target.files?.[0])} />
-          </div>
+          <FileDrop accept="image/*" disabled={uploading} onFiles={([f]) => pickPassport(f)}>
+            <Icon name="camera-plus" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>{uploading ? '上傳中…' : '拖曳或點擊上傳護照個資頁'}</p>
+          </FileDrop>
           {preview && <div className="upload-preview"><img src={preview} alt="護照預覽" /></div>}
         </Field>
       </div>

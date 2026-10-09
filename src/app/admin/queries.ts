@@ -1,21 +1,21 @@
 /* ═══════════════════════════════════════════════
    後台管理的伺服器資料（TanStack Query）
-   - 讀取：useAdminData('users', 'vendors', …) 依需要載入各清單（各自快取），回傳與 AdminData 相同形狀的 data
+   - 讀取：useAdminData('users', 'shops', …) 依需要載入各清單（各自快取），回傳與 AdminData 相同形狀的 data
    - 寫入：useCrud() 的 create / update / remove 先呼叫 API，成功後以後端回應更新快取；
            失敗時回傳 undefined / false，訊息由 queryClient 統一顯示
    ═══════════════════════════════════════════════ */
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast, type IconName } from '../../components'
 import {
   announcementsApi, bookingsApi, campaignsApi, crudOf, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi, trackingApi,
-  usersApi, vendorsApi, type EditableKey, type Item, type ItemChanges, type NewItem,
+  usersApi, shopsApi, shopProductsApi, type EditableKey, type Item, type ItemChanges, type NewItem,
 } from '../../api/admin'
-import type { AdminData } from '../../api/types/admin'
+import type { AdminData, ProductFilters, ShopProductCreate, ShopProductUpdate } from '../../api/types/admin'
 
 const LISTS = {
   users: () => usersApi.list(), tours: () => toursApi.list(), orders: () => ordersApi.list(), bookings: () => bookingsApi.list(),
   reviews: () => reviewsApi.list(), announcements: () => announcementsApi.list(), campaigns: () => campaignsApi.list(),
-  products: () => productsApi.list(), places: () => placesApi.list(), vendors: () => vendorsApi.list(), monthly: () => salesApi.list(),
+  products: () => productsApi.list(), places: () => placesApi.list(), shops: () => shopsApi.list(), monthly: () => salesApi.list(),
 }
 type ListKey = keyof typeof LISTS
 
@@ -26,6 +26,10 @@ export const adminKeys = {
   stats: ['admin', 'stats'] as const,
   receivables: ['admin', 'receivables'] as const,
   roster: (tourId: string) => ['admin', 'roster', tourId] as const,
+  shopProducts: (shopId: number) => ['admin', 'shop-products', shopId] as const,
+  shopProductsAll: ['admin', 'shop-products'] as const,
+  allProducts: (filters: object) => ['admin', 'products-all', filters] as const,
+  allProductsAll: ['admin', 'products-all'] as const,
 }
 
 /* 每個 data 欄位的來源查詢（團體追蹤三個欄位共用同一個查詢） */
@@ -43,7 +47,7 @@ const SOURCES: Record<DataKey, Source> = {
 
 /**
  * 載入畫面需要的資料；全部就緒前 data 為 undefined。
- * 用法：const { queries, data } = useAdminData('users', 'vendors')
+ * 用法：const { queries, data } = useAdminData('users', 'shops')
  *       <QueryState queries={queries}>{() => <View data={data!} />}</QueryState>
  */
 export function useAdminData<K extends DataKey>(...keys: K[]) {
@@ -81,7 +85,8 @@ export function useCrud() {
       if (!api.create) throw new Error(`${key} 不支援新增`)
       return api.create(item as never) as Promise<Row>
     },
-    onSuccess: (saved, { key }) => setList(key, (l) => [saved, ...l]),
+    /* 新增後重新讀取清單，以後端的排序顯示（等讀取完成才算成功，避免畫面跳動） */
+    onSuccess: (_, { key }) => qc.invalidateQueries({ queryKey: adminKeys.list(key), refetchType: 'all' }),
   })
   const updateM = useMutation({
     mutationFn: ({ key, id, changes }: { key: EditableKey; id: Id; changes: object }) => {
@@ -121,4 +126,53 @@ export function useCrud() {
       return ok
     },
   }
+}
+
+/* ── 店家的商品（依店家讀取；寫入後重新讀取清單，以後端的排序與計算結果為準） ── */
+
+/** 一家店家的商品 */
+export const useShopProducts = (shopId: number) =>
+  useQuery({ queryKey: adminKeys.shopProducts(shopId), queryFn: () => shopProductsApi.list({ shopId }) })
+
+/** 所有店家的商品（GET /products）：依篩選條件分頁讀取，每頁 PRODUCT_PAGE 筆，「載入更多」讀下一頁 */
+export const PRODUCT_PAGE = 100
+export const useAllProducts = (filters: Omit<ProductFilters, 'limit' | 'offset'>) =>
+  useInfiniteQuery({
+    queryKey: adminKeys.allProducts(filters),
+    queryFn: ({ pageParam }) => shopProductsApi.listAll({ ...filters, limit: PRODUCT_PAGE, offset: pageParam }),
+    initialPageParam: 0,
+    /* 後端沒有總筆數：這頁滿了才可能還有下一頁 */
+    getNextPageParam: (last, pages) => (last.length === PRODUCT_PAGE ? pages.length * PRODUCT_PAGE : undefined),
+  })
+
+/** 新增 / 修改 / 刪除 / 匯入商品：成功後重新讀取各店家與「所有商品」清單；失敗訊息由 queryClient 統一顯示 */
+export function useProductActions() {
+  const qc = useQueryClient()
+  const refresh = () => Promise.all([
+    qc.invalidateQueries({ queryKey: adminKeys.shopProductsAll, refetchType: 'all' }),
+    qc.invalidateQueries({ queryKey: adminKeys.allProductsAll, refetchType: 'all' }),
+  ])
+  return {
+    save: useMutation({
+      mutationFn: (v: { shopId: number; id?: number; create?: ShopProductCreate; changes?: ShopProductUpdate }) => v.id
+        ? shopProductsApi.update({ id: v.id }, v.changes ?? {})
+        : shopProductsApi.create({ shopId: v.shopId }, v.create!),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: (id: number) => shopProductsApi.remove({ id }), onSuccess: refresh }),
+    /* 匯入一定回 200：status = failed 時沒有寫入任何資料，由畫面顯示 error_report */
+    importFile: useMutation({
+      mutationFn: (v: { shopId: number; file: File }) => shopProductsApi.importFile({ shopId: v.shopId }, { file: v.file }),
+      onSuccess: (job) => (job.status !== 'failed' ? refresh() : undefined),
+    }),
+  }
+}
+
+/** 下載商品匯入範本（CSV / Excel）並存檔 */
+export async function downloadProductTemplate(shopId: number, fileFormat: 'csv' | 'xlsx') {
+  const { blob, filename } = await shopProductsApi.importTemplate({ shopId, file_format: fileFormat })
+  const url = URL.createObjectURL(blob)
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+  a.click()
+  URL.revokeObjectURL(url)
 }

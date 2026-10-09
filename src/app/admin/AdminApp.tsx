@@ -8,7 +8,8 @@ import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Tours from './pages/Tours'
 import Orders from './pages/Orders'
-import Vendors from './pages/Vendors'
+import Shops from './pages/Shops'
+import ShopProducts from './pages/ShopProducts'
 import Products from './pages/Products'
 import Places from './pages/Places'
 import Announcements from './pages/Announcements'
@@ -32,8 +33,8 @@ export default function AdminApp() {
             <Route path="users" element={<Users />} />
             <Route path="tours" element={<Tours />} />
             <Route path="orders" element={<Orders />} />
-            <Route path="vendors" element={<Vendors />} />
-            <Route path="vendors/:vendorId/products" element={<Products />} />
+            <Route path="shops" element={<Shops />} />
+            <Route path="shops/:shopId/products" element={<ShopProducts />} />
             <Route path="products" element={<Products />} />
             <Route path="places" element={<Places />} />
             <Route path="announcements" element={<Announcements />} />

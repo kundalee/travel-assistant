@@ -1,160 +1,121 @@
-import { useState } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
-import { AsyncButton, Chips, confirmDialog, Empty, Field, Hl, Icon, Modal, OptMulti, OptSingle, PageHead, QueryState, SearchBox, toast, useBusy } from '../../../components'
-import { CATS, KIND_KEY, KIND_TW, V_KINDS } from '../../../api/mocks/admin'
-import { useAdminData, useCrud } from '../queries'
-import type { AdminData } from '../../../api/types/admin'
-import type { Product, ProductKind } from '../../../api/types/admin'
-import { fmt, includesQ, productKinds, vendorName } from '../utils'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { AsyncButton, confirmDialog, Hl, Icon, PageHead, QueryState, SearchBox, TableEmpty, toast } from '../../../components'
+import type { Shop, ShopProduct } from '../../../api/types/admin'
+import { DataNote } from '../components/DataNote'
+import { ProductModal } from '../components/ProductParts'
+import { useAdminData, useAllProducts, useProductActions } from '../queries'
+import { commission, money, ratePct, stockText } from '../utils'
 
-function ProductModal({ product, scopeVendorId, onClose }: { product: Product | null; scopeVendorId?: string; onClose: () => void }) {
-  const data = useAdminData('vendors').data!
-  const { create, update } = useCrud()
-  const [name, setName] = useState(product?.name || '')
-  const [vendor, setVendor] = useState(vendorName(data.vendors, scopeVendorId ?? product?.vendor_id))
-  const [kinds, setKinds] = useState<string[]>(product ? productKinds(product) : [])
-  const [cat, setCat] = useState(product?.cat || '')
-  const [cost, setCost] = useState(product?.cost ? String(product.cost) : '')
-  const [price, setPrice] = useState(product ? String(product.price_twd) : '')
-  const [bonus, setBonus] = useState(product?.bonus_twd ? String(product.bonus_twd) : '')
+type SaleFilter = 'all' | 'on' | 'off'
 
-  const nCost = Number(cost) || 0, nPrice = Number(price) || 0
-  const profit = nPrice - nCost
-  const profitText = !cost && !price ? '' : `NT$ ${fmt(profit)}` + (nPrice ? `　（毛利率 ${Math.round((profit / nPrice) * 100)}%）` : '')
-
-  /* 依名稱取得支援店家；不存在則建立一筆基本資料（暫存，供後續銷售分析歸戶） */
-  async function resolveVendor(nm: string) {
-    const t = nm.trim(); if (!t) return null
-    const found = data.vendors.find((v) => v.name === t)
-    if (found) return found.id
-    const saved = await create('vendors', { name: t, addr: '', lat: null, lng: null, contact: '', phone: '', im: '', pay: '', payOther: '', ship: '', shipPlace: '', draft: true },
-      `已建立支援店家「${t}」（基本資料待補）`, 'building-store')
-    return saved ? saved.id : undefined
-  }
-
-  /* 兩個送出按鈕共用：任一執行中時兩者皆停用 */
-  const [saving, run] = useBusy()
-  async function save(draft: boolean) {
-    if (!name.trim()) return toast('請輸入商品名稱', 'alert-circle')
-    if (!draft) {
-      if (!kinds.length) return toast('請至少選擇一個商品分類', 'alert-circle')
-      if (!cat) return toast('請選擇商品效用', 'alert-circle')
-    }
-    const vendorId = await resolveVendor(vendor)
-    if (vendorId === undefined) return
-    const rec = {
-      name: name.trim(), vendor_id: vendorId, kinds, kind: KIND_KEY[kinds[0]] || 'souvenir', cat,
-      cost: nCost, price_twd: nPrice, bonus_twd: Number(bonus) || 0, draft,
-    }
-    const msg = draft ? '已暫時儲存（草稿）' : '商品已儲存'
-    const icon = draft ? 'device-floppy' : 'check'
-    const saved = product ? await update('products', product.id, rec, msg, icon) : await create('products', rec, msg, icon)
-    if (saved) onClose()
-  }
-
-  return (
-    <Modal onClose={onClose} title={product ? '修改商品' : '新增商品'} sub="商品分類・效用・進銷與供貨店家">
-      <Field label="商品名稱"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="宇治抹茶精選組" /></Field>
-      <Field label="支援店家" hint={scopeVendorId ? undefined : '輸入名稱，不存在時自動建立'}>
-        <input list="vendorNames" value={vendor} onChange={(e) => setVendor(e.target.value)} readOnly={!!scopeVendorId}
-          className={scopeVendorId ? 'readonly' : ''} placeholder="例：京都物產株式會社" autoComplete="off" />
-        <datalist id="vendorNames">{data.vendors.map((v) => <option key={v.id} value={v.name} />)}</datalist>
-        <p className="hint">{scopeVendorId ? '此商品歸屬於目前的支援店家' : '若輸入的店家不存在，儲存時會自動建立一筆基本資料'}</p>
-      </Field>
-      <Field label="商品分類" hint="可複選"><OptMulti options={V_KINDS} value={kinds} onChange={setKinds} /></Field>
-      <Field label="商品效用" hint="僅單選"><OptSingle options={CATS} value={cat} onChange={setCat} /></Field>
-      <div className="filt-row">
-        <Field label="進價成本" style={{ flex: 1, margin: 0 }}><input type="number" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="300" /></Field>
-        <Field label="銷售金額" style={{ flex: 1, margin: 0 }}><input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="480" /></Field>
-      </div>
-      <Field label="利潤" hint="自動計算">
-        <input readOnly value={profitText} placeholder="—" className="readonly"
-          style={{ fontWeight: 700, color: profit < 0 ? 'var(--danger)' : 'var(--ok)' }} />
-      </Field>
-      <Field label="每件獎金 (NT$)"><input type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="120" /></Field>
-      <div className="action-2">
-        <AsyncButton className="btn btn-ghost" disabled={saving} onClick={() => run(() => save(true))}><Icon name="device-floppy" />暫時儲存</AsyncButton>
-        <AsyncButton className="btn btn-primary" disabled={saving} onClick={() => run(() => save(false))}><Icon name="check" />儲存商品</AsyncButton>
-      </div>
-    </Modal>
-  )
+/* 輸入停止一段時間後才更新（搜尋送到後端，避免每個字都請求一次） */
+function useDebounced<T>(value: T, ms = 300) {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return v
 }
 
-type KindFilter = ProductKind | '全部'
-
+/* 所有店家的商品：/admin/products（GET /products：篩選在後端，每次載入 100 筆） */
 export default function Products() {
-  const { queries, data } = useAdminData('vendors', 'products')
-  return <QueryState queries={queries}>{() => <ProductsView data={data!} />}</QueryState>
+  const shops = useAdminData('shops')
+  return <QueryState queries={shops.queries}>{() => <ProductsView shops={shops.data!.shops} />}</QueryState>
 }
 
-function ProductsView({ data }: { data: Pick<AdminData, 'vendors' | 'products'> }) {
-  const { vendorId } = useParams()
-  const { remove } = useCrud()
+function ProductsView({ shops }: { shops: Shop[] }) {
+  const { remove } = useProductActions()
   const [q, setQ] = useState('')
-  const [kind, setKind] = useState<KindFilter>('全部')
-  const [cat, setCat] = useState('全部')
-  const [editing, setEditing] = useState<Product | 'new' | null>(null)
+  const [shopId, setShopId] = useState(0)
+  const [category, setCategory] = useState('')
+  const [sale, setSale] = useState<SaleFilter>('all')
+  const [editing, setEditing] = useState<ShopProduct | 'new' | null>(null)
 
-  const scoped = !!vendorId
-  const vname = vendorName(data.vendors, vendorId)
-  if (scoped && !vname) return <Navigate to="/admin/vendors" replace />
+  const search = useDebounced(q.trim())
+  const products = useAllProducts({
+    shop_id: shopId || undefined, q: search || undefined, category: category || undefined,
+    is_on_sale: sale === 'all' ? undefined : sale === 'on',
+  })
+  const list = products.data?.pages.flat() ?? []
+  const shopOf = (id: number) => shops.find((s) => s.id === id)
 
-  const pool = scoped ? data.products.filter((p) => p.vendor_id === vendorId) : data.products
-  const hasKind = (p: Product, k: ProductKind) => productKinds(p).includes(KIND_TW[k]) || p.kind === k
-  const list = pool.filter((p) =>
-    (scoped || kind === '全部' || hasKind(p, kind)) &&
-    (cat === '全部' || (p.cat || '') === cat) &&
-    includesQ([p.name, p.cat, productKinds(p).join(' '), scoped ? '' : vendorName(data.vendors, p.vendor_id), String(p.price_twd), String(p.cost)], q))
+  /* 分類選單：已載入商品的分類 + 目前選擇的分類（後端沒有分類清單） */
+  const knownCategories = [...new Set([...list.map((p) => p.category), category].filter((c): c is string => !!c))].sort()
 
-  const kindKeys: KindFilter[] = ['全部', ...V_KINDS.map((k) => KIND_KEY[k])]
-
-  function del(p: Product) {
-    return confirmDialog({ title: '刪除商品？', message: `「${p.name}」將被刪除。`, confirmLabel: '刪除', danger: true, onConfirm: () => remove('products', p.id, '已刪除商品') })
+  function del(p: ShopProduct) {
+    return confirmDialog({
+      title: '刪除商品？', message: `「${p.name}」（${p.sku}）將被永久刪除。`, confirmLabel: '刪除', danger: true,
+      onConfirm: async () => { await remove.mutateAsync(p.id); toast('已刪除商品', 'trash') },
+    })
   }
 
   return (
     <div className="pad">
-      <PageHead icon="package" title={scoped ? '商品資料管理_' + vname : '商品資料管理'} back={scoped ? '/admin/vendors' : undefined}>
+      <PageHead icon="package" title="商品資料管理">
         <button className="btn btn-primary" onClick={() => setEditing('new')}><Icon name="plus" />新增商品</button>
       </PageHead>
-      {scoped && <div className="data-note"><Icon name="building-store" />此處商品皆屬於「{vname}」</div>}
       <div className="toolbar">
-        <SearchBox value={q} onChange={setQ} placeholder={scoped ? '全文檢索：商品 / 效用 / 價格' : '全文檢索：商品 / 效用 / 支援店家 / 價格'} />
+        <SearchBox value={q} onChange={setQ} placeholder="搜尋 SKU / 商品名稱" />
+        <select className="filt" value={shopId} onChange={(e) => setShopId(Number(e.target.value))}>
+          <option value={0}>全部店家</option>
+          {shops.map((s) => <option key={s.id} value={s.id}>{s.name}{s.is_active ? '' : '（已停用）'}</option>)}
+        </select>
+        <select className="filt" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">全部分類</option>{knownCategories.map((c) => <option key={c}>{c}</option>)}
+        </select>
+        <select className="filt" value={sale} onChange={(e) => setSale(e.target.value as SaleFilter)}>
+          <option value="all">全部狀態</option><option value="on">上架中</option><option value="off">已下架</option>
+        </select>
       </div>
-      {!scoped && (
-        <Chips<KindFilter> style={{ marginBottom: '0.7rem' }} value={kind} onChange={setKind}
-          items={kindKeys.map((k) => [k, k === '全部' ? '全部' : KIND_TW[k], k === '全部' ? pool.length : pool.filter((p) => hasKind(p, k)).length])} />
-      )}
-      <Chips className="cat-chips" value={cat} onChange={setCat}
-        items={['全部', ...CATS].map((c) => [c, c, c === '全部' ? pool.length : pool.filter((p) => (p.cat || '') === c).length])} />
-      <div className="data-note"><Icon name="list-search" />符合 {list.length} 筆</div>
+      <DataNote group="admin.shopProducts" />
 
-      {list.length ? list.map((p) => {
-        const vn = scoped ? '' : vendorName(data.vendors, p.vendor_id)
-        return (
-          <div className="lrow" key={p.id}>
-            <div className="lmain">
-              <div className="lname"><Hl text={p.name} q={q} /> {p.draft && <span className="draft-tag">暫存</span>}</div>
-              <div className="lsub">NT$ {fmt(p.price_twd)} · 進價 NT$ {fmt(p.cost)} · 獎金 NT$ {fmt(p.bonus_twd)}</div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-              <div className="p-tags">
-                {p.cat && <span className="p-tag cat"><Hl text={p.cat} q={q} /></span>}
-                {vn && <span className="p-tag vend"><Icon name="building-store" /><Hl text={vn} q={q} /></span>}
-                {!scoped && productKinds(p).map((k) => <span className="rbadge guide" key={k}>{k}</span>)}
-              </div>
-              <div className="lacts">
-                <button className="iconbtn-sm" onClick={() => setEditing(p)}><Icon name="edit" /></button>
-                <button className="iconbtn-sm del" onClick={() => del(p)}><Icon name="trash" /></button>
-              </div>
-            </div>
+      <QueryState queries={[products]}>{() => (
+        <>
+          <div className="dt-count">已顯示 {list.length} 筆{products.hasNextPage ? '（還有更多）' : ''}</div>
+          <div className="card-wrap">
+            <table className="dtable">
+              <thead><tr>
+                <th>商品</th><th style={{ width: 170 }}>店家</th><th style={{ width: 130 }}>售價</th><th style={{ width: 70 }}>庫存</th>
+                <th style={{ width: 140 }}>領隊佣金 / 件</th><th style={{ width: 70 }}>狀態</th><th style={{ width: 80 }}>工具</th>
+              </tr></thead>
+              <tbody>
+                {list.length ? list.map((p) => {
+                  const shop = shopOf(p.shop_id)
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <div className="t-title"><Hl text={p.name} q={search} /></div>
+                        <div className="t-sub"><Hl text={p.sku} q={search} />{p.category && ` · ${p.category}`}</div>
+                      </td>
+                      <td className="t-sub">{shop ? <Link to={`/admin/shops/${shop.id}/products`}>{shop.name}</Link> : `#${p.shop_id}`}</td>
+                      <td>{money(p.price, p.currency)}</td>
+                      <td className={p.stock === 0 ? 't-sub' : undefined}>{stockText(p.stock)}</td>
+                      <td className="t-sub">{shop ? money(commission(p, shop), p.currency) : '—'}<br />分潤 {ratePct(p.default_commission_share)}</td>
+                      <td><span className={`st-badge ${p.is_on_sale ? 'on' : 'off'}`}>{p.is_on_sale ? '上架' : '下架'}</span></td>
+                      <td><div className="dt-acts">
+                        <button onClick={() => setEditing(p)} title="修改"><Icon name="edit" /></button>
+                        <button className="del" onClick={() => del(p)} title="刪除"><Icon name="trash" /></button>
+                      </div></td>
+                    </tr>
+                  )
+                }) : <TableEmpty cols={7} icon="package" text={search || shopId || category || sale !== 'all' ? '查無符合的商品' : '尚無商品'} />}
+              </tbody>
+            </table>
           </div>
-        )
-      }) : <Empty text="查無符合的商品" />}
+          {products.hasNextPage && (
+            <AsyncButton className="btn btn-ghost btn-block" style={{ marginTop: '0.9rem' }} onClick={() => products.fetchNextPage()}>
+              <Icon name="chevron-down" />載入更多
+            </AsyncButton>
+          )}
+        </>
+      )}</QueryState>
 
       {editing && (
-        <ProductModal key={editing === 'new' ? 'new' : editing.id} product={editing === 'new' ? null : editing}
-          scopeVendorId={vendorId} onClose={() => setEditing(null)} />
+        <ProductModal key={editing === 'new' ? 'new' : editing.id} shops={shops} categories={knownCategories}
+          shop={editing === 'new' ? undefined : shopOf(editing.shop_id)} product={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)} />
       )}
     </div>
   )

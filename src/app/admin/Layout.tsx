@@ -14,7 +14,7 @@ const NAV: [group: string, items: NavItem[]][] = [
     ['orders', 'receipt', '訂單管理'],
   ]],
   ['供應與商品', [
-    ['vendors', 'building-warehouse', '支援店家管理'],
+    ['shops', 'building-warehouse', '支援店家管理'],
     ['products', 'package', '商品資料管理'],
     ['places', 'map-pin', '旅遊地點'],
   ]],

@@ -1,15 +1,17 @@
 /* 假後端：後台管理 */
 import { clone } from '../../lib/utils'
 import { IMG, RECEIVABLE, ROSTER_SEED, SAMPLE, STATS, VITALS, ZONES } from '../mocks/admin'
-import type { AdminCollections, RosterEntry, Tour, User, UserCreate, UserUpdate } from '../types/admin'
+import type {
+  AdminCollections, ImportJob, RosterEntry, Shop, ShopCreate, ShopProduct, ShopProductCreate, ShopProductUpdate, ShopUpdate, Tour, User, UserCreate, UserUpdate,
+} from '../types/admin'
 import type { Endpoint } from '../endpoints'
 import {
   aiApi, announcementsApi, bookingsApi, campaignsApi, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi,
-  trackingApi, usersApi, vendorsApi,
+  trackingApi, usersApi, shopsApi, shopProductsApi,
 } from '../admin'
-import { FakeError, json, persisted, requireUser, route, type Ctx } from './server'
+import { FakeError, files, json, persisted, requireUser, route, type Ctx } from './server'
 
-const store = persisted('fake_admin_db_v2', () => clone(SAMPLE))
+const store = persisted('fake_admin_db_v3', () => clone(SAMPLE))
 const db = () => store.get()
 
 type Key = keyof AdminCollections
@@ -104,7 +106,203 @@ collection('announcements', announcementsApi, 'an')
 collection('campaigns', campaignsApi, 'c')
 collection('products', productsApi, 'p')
 collection('places', placesApi, 'pl')
-collection('vendors', vendorsApi, 'v')
+/* 支援店家：與真正後端相同（數字 id；name、agency_rate 0–1、settlement_cycle 必填；agency_rate 以 4 位小數字串回傳） */
+const rate = (v: unknown) => {
+  const n = Number(v)
+  if (v === '' || v == null || !(n >= 0 && n <= 1)) throw new FakeError(422, 'body.agency_rate: Input should be between 0 and 1')
+  return n.toFixed(4)
+}
+route(shopsApi.list, handler(() => db().shops))
+route(shopsApi.create, handler((ctx) => {
+  const input = json<ShopCreate>(ctx)
+  if (!input.name?.trim()) throw new FakeError(422, 'body.name: String should have at least 1 character')
+  if (!['per_tour', 'monthly'].includes(input.settlement_cycle)) throw new FakeError(422, "body.settlement_cycle: Input should be 'per_tour' or 'monthly'")
+  const shop: Shop = {
+    id: Math.max(0, ...db().shops.map((s) => s.id)) + 1, name: input.name, contact_name: input.contact_name ?? null, phone: input.phone ?? null,
+    email: input.email ?? null, address: input.address ?? null, city: input.city ?? null, country: input.country ?? null,
+    agency_rate: rate(input.agency_rate), settlement_cycle: input.settlement_cycle, is_active: input.is_active ?? true,
+    place_ids: input.place_ids ?? [], created_at: new Date().toISOString(),
+  }
+  db().shops.push(shop)
+  return shop
+}, true))
+/* 刪除：連同此店家的商品一起刪除（假後端沒有行程停靠點，不會拒絕） */
+route(shopsApi.remove, handler((ctx) => {
+  if (!db().shops.some((s) => String(s.id) === ctx.params.id)) throw new FakeError(404, 'Shop not found')
+  db().shops = db().shops.filter((s) => String(s.id) !== ctx.params.id)
+  db().products = db().products.filter((p) => p.vendor_id !== ctx.params.id)
+  pdb().products = pdb().products.filter((p) => String(p.shop_id) !== ctx.params.id)
+  pstore.save()
+}, true))
+/* ── 店家的商品：與真正後端相同（數字 id；SKU 於店家內不可重複且不能修改；price / 分潤比例以小數字串回傳；
+      匯入 CSV 全部正確才寫入，否則依列回報錯誤）。假後端的 Excel 匯入只回報錯誤 ── */
+const PRODUCT_COLUMNS = ['sku', 'name', 'description', 'category', 'image_url', 'price', 'currency', 'stock', 'default_commission_share', 'sale_start', 'sale_end', 'is_on_sale']
+const seedProduct = (id: number, shop_id: number, sku: string, name: string, category: string, price: number, currency: string, stock: number | null, share: number): ShopProduct => ({
+  id, shop_id, sku, name, description: null, category, image_url: null, price: price.toFixed(2), currency, stock,
+  default_commission_share: share.toFixed(4), sale_start: null, sale_end: null, is_on_sale: true, created_at: '2026-02-01T09:00:00Z',
+})
+const pstore = persisted('fake_shop_products_v1', () => ({
+  products: [
+    seedProduct(1, 1, 'KB-001', '八橋餅禮盒', '伴手禮', 1200, 'JPY', 50, 0.3),
+    seedProduct(2, 1, 'KB-002', '京漬物三味', '食品', 1600, 'JPY', null, 0.3),
+    seedProduct(3, 1, 'KB-003', '清酒一合瓶', '酒類', 2200, 'JPY', 0, 0.25),
+    seedProduct(4, 2, 'UJ-001', '宇治抹茶粉', '茶葉', 2800, 'JPY', 30, 0.2),
+    seedProduct(5, 3, 'HK-001', '北海道海鮮干貝', '海產', 4500, 'JPY', 12, 0.2),
+  ],
+  jobs: 0,
+}))
+const pdb = () => pstore.get()
+const productHandler = (fn: (ctx: Ctx) => unknown, save = false) => async (ctx: Ctx) => {
+  requireUser(ctx)
+  const out = await fn(ctx)
+  if (save) pstore.save()
+  return out
+}
+const shopOf = (id: string) => {
+  const shop = db().shops.find((s) => String(s.id) === id)
+  if (!shop) throw new FakeError(404, 'Shop not found')
+  return shop
+}
+const productOf = (id: string) => {
+  const product = pdb().products.find((x) => String(x.id) === id)
+  if (!product) throw new FakeError(404, 'Product not found')
+  return product
+}
+/* 驗證並整理一筆商品；回傳錯誤清單（field + message） */
+function checkProduct(p: Partial<ShopProductCreate>, creating: boolean) {
+  const errors: { field: string; message: string }[] = []
+  if (creating && !p.sku?.trim()) errors.push({ field: 'sku', message: 'Field required' })
+  if ((creating || p.name !== undefined) && !p.name?.trim()) errors.push({ field: 'name', message: creating && p.name === undefined ? 'Field required' : 'String should have at least 1 character' })
+  if (creating || p.price != null) {
+    const price = Number(p.price)
+    if (p.price == null || (p.price as unknown) === '') errors.push({ field: 'price', message: 'Field required' })
+    else if (!(price >= 0)) errors.push({ field: 'price', message: 'Input should be a valid decimal' })
+  }
+  if ((creating || p.currency != null) && !/^[A-Z]{3}$/.test(p.currency ?? '')) errors.push({ field: 'currency', message: "String should match pattern '^[A-Z]{3}$'" })
+  if (p.stock != null && !(Number.isInteger(Number(p.stock)) && Number(p.stock) >= 0)) errors.push({ field: 'stock', message: 'Input should be greater than or equal to 0' })
+  if (p.default_commission_share != null && !(Number(p.default_commission_share) >= 0 && Number(p.default_commission_share) <= 1)) errors.push({ field: 'default_commission_share', message: 'Input should be less than or equal to 1' })
+  return errors
+}
+const normalize = (p: Partial<ShopProductCreate>): Partial<ShopProduct> => ({
+  ...(p as Partial<ShopProduct>),
+  ...(p.price != null && { price: Number(p.price).toFixed(2) }),
+  ...(p.default_commission_share != null && { default_commission_share: Number(p.default_commission_share).toFixed(4) }),
+  ...(p.stock != null && { stock: Number(p.stock) }),
+})
+const failOn = (errors: { field: string; message: string }[]) => {
+  if (errors.length) throw new FakeError(422, errors.map((e) => `body.${e.field}: ${e.message}`).join('; '))
+}
+
+route(shopProductsApi.list, productHandler((ctx) => {
+  shopOf(ctx.params.shopId)
+  return pdb().products.filter((x) => String(x.shop_id) === ctx.params.shopId)
+}))
+/* 所有商品：與真正後端相同，依店家、SKU 排序，支援篩選與 limit / offset 分頁 */
+route(shopProductsApi.listAll, productHandler((ctx) => {
+  const qp = ctx.query
+  const q = (qp.get('q') ?? '').toLowerCase()
+  const limit = Math.min(500, Math.max(1, Number(qp.get('limit') ?? 100)))
+  const offset = Math.max(0, Number(qp.get('offset') ?? 0))
+  return pdb().products
+    .filter((x) => !qp.get('shop_id') || String(x.shop_id) === qp.get('shop_id'))
+    .filter((x) => !q || x.sku.toLowerCase().includes(q) || x.name.toLowerCase().includes(q))
+    .filter((x) => !qp.get('category') || x.category === qp.get('category'))
+    .filter((x) => !qp.get('is_on_sale') || String(x.is_on_sale) === qp.get('is_on_sale'))
+    .sort((a, b) => a.shop_id - b.shop_id || a.sku.localeCompare(b.sku))
+    .slice(offset, offset + limit)
+}))
+route(shopProductsApi.create, productHandler((ctx) => {
+  const shop = shopOf(ctx.params.shopId)
+  const input = json<ShopProductCreate>(ctx)
+  failOn(checkProduct(input, true))
+  if (pdb().products.some((x) => x.shop_id === shop.id && x.sku === input.sku)) throw new FakeError(409, `SKU ${input.sku} already exists in this shop`)
+  const product: ShopProduct = {
+    ...seedProduct(Math.max(0, ...pdb().products.map((x) => x.id)) + 1, shop.id, input.sku, input.name, '', 0, input.currency, null, 0),
+    ...normalize(input), created_at: new Date().toISOString(),
+  } as ShopProduct
+  product.category = input.category ?? null
+  product.is_on_sale = input.is_on_sale ?? true
+  pdb().products.push(product)
+  return product
+}, true))
+route(shopProductsApi.update, productHandler((ctx) => {
+  const product = productOf(ctx.params.id)
+  const changes = json<ShopProductUpdate & { sku?: string }>(ctx)
+  failOn(checkProduct(changes, false))
+  Object.entries(normalize(changes)).forEach(([k, v]) => { if (v !== undefined && k !== 'sku') (product as unknown as Record<string, unknown>)[k] = v })
+  return product
+}, true))
+route(shopProductsApi.remove, productHandler((ctx) => {
+  productOf(ctx.params.id)
+  pdb().products = pdb().products.filter((x) => String(x.id) !== ctx.params.id)
+}, true))
+route(shopProductsApi.importTemplate, productHandler((ctx) => {
+  shopOf(ctx.params.shopId)
+  /* 假後端一律產生 CSV 範本（Excel 範本由真正後端提供） */
+  return { filename: 'products-template.csv', content: PRODUCT_COLUMNS.join(',') + '\n', type: 'text/csv;charset=utf-8' }
+}))
+route(shopProductsApi.importFile, productHandler(async (ctx) => {
+  const shop = shopOf(ctx.params.shopId)
+  const file = files(ctx, 'file')[0]
+  if (!file) throw new FakeError(422, 'body.file: Field required')
+  const job: ImportJob = { id: ++pdb().jobs, status: 'failed', file_name: file.name, target_id: shop.id, error_report: [], created_at: new Date().toISOString() }
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    job.error_report = [{ row: 1, message: '假後端只支援 CSV 匯入（Excel 請連接真正後端）' }]
+    return job
+  }
+  const [header = [], ...rows] = parseCsv((await file.text()).replace(/^\uFEFF/, ''))
+  const cols = header.map((h) => h.trim())
+  const parsed = rows.map((cells, i) => {
+    const r = Object.fromEntries(cols.map((c, j) => [c, cells[j]?.trim() ?? '']))
+    const opt = (k: string) => r[k] || null
+    const input: ShopProductCreate = {
+      sku: r.sku, name: r.name, description: opt('description'), category: opt('category'), image_url: opt('image_url'),
+      price: r.price === '' ? (undefined as unknown as number) : (r.price as unknown as number), currency: r.currency,
+      stock: r.stock === '' || r.stock == null ? null : Number(r.stock), default_commission_share: r.default_commission_share ? Number(r.default_commission_share) : 0,
+      sale_start: opt('sale_start'), sale_end: opt('sale_end'), is_on_sale: r.is_on_sale ? r.is_on_sale.toLowerCase() !== 'false' : true,
+    }
+    const errors = checkProduct(input, true)
+    if (input.sku && pdb().products.some((x) => x.shop_id === shop.id && x.sku === input.sku)) errors.push({ field: 'sku', message: `SKU ${input.sku} already exists in this shop` })
+    return { row: i + 2, input, errors }
+  })
+  job.error_report = parsed.flatMap((p) => p.errors.map((e) => ({ row: p.row, ...e })))
+  if (job.error_report.length) return job
+  let next = Math.max(0, ...pdb().products.map((x) => x.id))
+  parsed.forEach(({ input }) => pdb().products.push({ ...seedProduct(++next, shop.id, input.sku, input.name, '', 0, input.currency, null, 0), ...normalize(input), created_at: new Date().toISOString() } as ShopProduct))
+  return { ...job, status: 'succeeded', error_report: null }
+}, true))
+
+/* CSV（雙引號欄位、欄位內逗號與換行） */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = [], cell = '', quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++ }
+      else if (c === '"') quoted = false
+      else cell += c
+    } else if (c === '"') quoted = true
+    else if (c === ',') { row.push(cell); cell = '' }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++
+      row.push(cell); rows.push(row); row = []; cell = ''
+    } else cell += c
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row) }
+  return rows.filter((r) => r.some((x) => x.trim()))
+}
+
+route(shopsApi.update, handler((ctx) => {
+  const shop = db().shops.find((s) => String(s.id) === ctx.params.id)
+  if (!shop) throw new FakeError(404, 'Shop not found')
+  const changes = json<ShopUpdate>(ctx)
+  Object.entries(changes).forEach(([k, v]) => {
+    if (v === undefined) return
+    ;(shop as unknown as Record<string, unknown>)[k] = k === 'agency_rate' ? rate(v) : v
+  })
+  return shop
+}, true))
 
 /* ── 行程：名冊 / CRM 同步 ── */
 route(toursApi.members, handler((ctx) => roster(find('tours', ctx.params.id) as Tour)))

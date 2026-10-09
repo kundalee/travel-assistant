@@ -60,19 +60,25 @@ function splitTop(s: string) {
 const squash = (s: string) => s.replace(/\s+/g, ' ').replace(/;\s*}/g, ' }').trim()
 
 /* ── 資源檔：端點 → [回應, 請求內容] ── */
-const HELPER_METHOD: Record<string, Method> = { get: 'GET', post: 'POST', upload: 'POST', put: 'PUT', patch: 'PATCH', del: 'DELETE' }
-const io = new Map<string, { res: string; body?: string; portal: string }>()
+const HELPER_METHOD: Record<string, Method> = { get: 'GET', download: 'GET', post: 'POST', upload: 'POST', put: 'PUT', patch: 'PATCH', del: 'DELETE' }
+const io = new Map<string, { res: string; body?: string; query?: string; portal: string }>()
 for (const [portal, files] of Object.entries(RESOURCE_FILES)) {
   for (const f of files) {
     const src = read(f)
     /* post<回應, 請求內容>()('/path', …)；沒有型別參數（post()(…)）= 無請求內容、無回應 */
-    for (const m of src.matchAll(/\b(get|post|put|patch|del|upload)(<|\(\)\()/g)) {
+    for (const m of src.matchAll(/\b(get|download|post|put|patch|del|upload)(<|\(\)\()/g)) {
       const lt = m.index! + m[1].length
       const gt = m[2] === '<' ? matchEnd(src, lt) : lt - 1
       const call = /^\(\)\(\s*'([^']+)'/.exec(src.slice(gt + 1))
       if (!call) continue
-      const [res = 'void', body] = m[2] === '<' ? splitTop(src.slice(lt + 1, gt)) : []
-      io.set(`${HELPER_METHOD[m[1]]} ${call[1]}`, { res: squash(res), body: body && squash(body), portal })
+      const typeArgs = m[2] === '<' ? splitTop(src.slice(lt + 1, gt)) : []
+      /* get<回應, 查詢字串>、download<查詢字串>（回應為檔案）、其他：<回應, 請求內容> */
+      const [res = 'void', second] = m[1] === 'download' ? ['file', typeArgs[0]] : typeArgs
+      const isQuery = m[1] === 'get' || m[1] === 'download'
+      io.set(`${HELPER_METHOD[m[1]]} ${call[1]}`, {
+        res: squash(res), portal,
+        ...(second && (isQuery ? { query: squash(second) } : { body: squash(second) })),
+      })
     }
   }
 }
@@ -134,12 +140,16 @@ const anchor = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} -]/gu, '').t
 const cell = (s: string) => '`' + s.replace(/\|/g, '\\|') + '`'
 const ioOf = (e: Endpoint) => io.get(`${e.method} ${e.path}`)
 function requestCell(e: Endpoint) {
-  const body = ioOf(e)?.body
-  if (!body || body === 'void') return '—'
-  return (e.multipart ? 'multipart ' : '') + cell(body)
+  const x = ioOf(e)
+  const parts = [
+    x?.query && `query ${cell(x.query)}`,
+    x?.body && x.body !== 'void' && (e.multipart ? 'multipart ' : '') + cell(x.body),
+  ].filter(Boolean)
+  return parts.length ? parts.join('<br>') : '—'
 }
 function responseCell(e: Endpoint) {
   const res = ioOf(e)?.res ?? 'void'
+  if (res === 'file') return 'file（下載；Content-Disposition 帶檔名）'
   return res === 'void' ? '`204`' : cell(res)
 }
 
@@ -185,7 +195,7 @@ for (const [p, title] of PORTALS) {
 
   /* 本入口用到的型別 */
   const defs = definitions([...RESOURCE_FILES[p], ...TYPE_FILES[p]])
-  const roots = eps.flatMap((e) => { const x = ioOf(e); return x ? [...refs(x.res), ...(x.body ? refs(x.body) : [])] : [] })
+  const roots = eps.flatMap((e) => { const x = ioOf(e); return x ? [...(x.res === 'file' ? [] : refs(x.res)), ...(x.body ? refs(x.body) : []), ...(x.query ? refs(x.query) : [])] : [] })
   const { order, missing } = collect(roots, defs)
   if (order.length) {
     lines.push('', `### ${title.split(' ')[0]} · Types`, '', '```ts', order.map((n) => OVERRIDES[n] ?? defs.get(n)).join('\n\n'), '```')

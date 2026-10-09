@@ -138,21 +138,114 @@ export interface Place {
   souvenirs: Souvenir[]
 }
 
-export interface Vendor {
-  id: string
+/** 結算週期：每團結算 / 每月結算 */
+export type SettlementCycle = 'per_tour' | 'monthly'
+
+/** 支援店家（與後端 ShopRead 相同；GET /shops）。刪除會連同商品一起刪除；有歷史資料者請停用 */
+export interface Shop {
+  id: number
   name: string
-  addr?: string
-  lat: number | null
-  lng: number | null
-  contact?: string
-  phone?: string
-  im?: string
-  pay: string
-  payOther?: string
-  ship: string
-  shipPlace?: string
-  draft: boolean
+  contact_name: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  city: string | null
+  country: string | null
+  /** 店家支付旅行社的比例（小數字串，例："0.1500" = 15%） */
+  agency_rate: string
+  settlement_cycle: SettlementCycle
+  is_active: boolean
+  /** 此店家服務的旅遊地點 */
+  place_ids: number[]
+  created_at: string
 }
+
+/** 新增支援店家（POST /shops） */
+export interface ShopCreate {
+  name: string
+  contact_name?: string | null
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  city?: string | null
+  country?: string | null
+  /** 0–1，例：0.15 = 15% */
+  agency_rate: number
+  settlement_cycle: SettlementCycle
+  is_active?: boolean
+  place_ids?: number[]
+}
+
+/** 店家的商品（與後端 ProductRead 相同；GET /shops/:shopId/products）。一個商品只屬於一家店家，不能移到其他店家 */
+export interface ShopProduct {
+  id: number
+  shop_id: number
+  /** 店家內的商品編號，建立後不能修改 */
+  sku: string
+  name: string
+  description: string | null
+  category: string | null
+  image_url: string | null
+  /** 售價（小數字串，例："1200.00"） */
+  price: string
+  /** 幣別（3 碼大寫，例：JPY） */
+  currency: string
+  /** 庫存：null = 不限、0 = 售完 */
+  stock: number | null
+  /** 領隊分潤比例：旅行社抽成中分給領隊的比例（小數字串，0–1）；佣金 = 售價 × 店家抽成 × 分潤比例 */
+  default_commission_share: string
+  sale_start: string | null
+  sale_end: string | null
+  is_on_sale: boolean
+  created_at: string
+}
+
+/** 新增商品（POST /shops/:shopId/products） */
+export interface ShopProductCreate {
+  sku: string
+  name: string
+  description?: string | null
+  category?: string | null
+  image_url?: string | null
+  price: number
+  currency: string
+  stock?: number | null
+  /** 0–1，預設 0 */
+  default_commission_share?: number
+  sale_start?: string | null
+  sale_end?: string | null
+  /** 預設 true */
+  is_on_sale?: boolean
+}
+
+/** 所有商品的篩選與分頁（GET /products 的查詢字串） */
+export interface ProductFilters {
+  shop_id?: number
+  /** SKU / 商品名稱 */
+  q?: string
+  category?: string
+  is_on_sale?: boolean
+  /** 1–500，預設 100 */
+  limit?: number
+  offset?: number
+  [key: string]: string | number | boolean | undefined
+}
+
+/** 修改商品（PATCH /products/:id）：未帶的欄位不變；SKU 不能修改 */
+export type ShopProductUpdate = Partial<Omit<ShopProductCreate, 'sku'>>
+
+/** 匯入結果：status = failed 時什麼都沒寫入，error_report 依列列出所有問題 */
+export interface ImportJob {
+  id: number
+  status: string
+  file_name: string
+  target_id: number | null
+  error_report: { row: number; field?: string; message: string }[] | null
+  created_at: string
+}
+
+/** 修改支援店家（PATCH /shops/:id）：未帶的欄位不變、null 清除；停用 = is_active: false */
+export type ShopUpdate = Partial<Omit<ShopCreate, 'place_ids'>>
 
 export interface MonthlySales {
   month: string
@@ -188,7 +281,7 @@ export interface AdminCollections {
   campaigns: Campaign[]
   products: Product[]
   places: Place[]
-  vendors: Vendor[]
+  shops: Shop[]
   monthly: MonthlySales[]
   trackingGroups: TrackingGroup[]
 }

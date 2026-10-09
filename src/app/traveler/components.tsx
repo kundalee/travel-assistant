@@ -1,7 +1,7 @@
 import qrcode from 'qrcode-generator'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AsyncButton, Empty, Field, Icon, type IconName, Modal, QueryState, Tabs, toast, useBusy } from '../../components'
+import { AsyncButton, Empty, Field, FileDrop, Icon, type IconName, Modal, QueryState, Tabs, toast, useBusy } from '../../components'
 import { fmt } from '../../lib/utils'
 import { useAlbum, useCreateReview, useFavoritePhoto, usePublishMemory, useUploadToAlbum } from './queries'
 import type { AlbumPhoto, Boutique, CatalogTour, GroupBuyItem, Notice } from '../../api/types/traveler'
@@ -235,7 +235,6 @@ export function ReviewModal({ tourId, tourTitle, onClose }: { tourId: string; to
   const [content, setContent] = useState('')
   const [photos, setPhotos] = useState<File[]>([])
   const [anonymous, setAnonymous] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   async function submit() {
     if (!rating) return toast('請選擇評分', 'alert-circle')
@@ -261,10 +260,9 @@ export function ReviewModal({ tourId, tourTitle, onClose }: { tourId: string; to
       <Field label="評價標題" style={{ marginTop: '1.1rem' }}><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="簡短描述您的體驗" /></Field>
       <Field label="詳細評價"><textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="分享旅行體驗、導遊服務、住宿品質…" /></Field>
       <Field label="上傳照片（選填）">
-        <div className="upload-zone" onClick={() => fileRef.current?.click()}>
-          <Icon name="photo-plus" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>最多 5 張</p>
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => setPhotos([...(e.target.files || [])].slice(0, 5))} />
-        </div>
+        <FileDrop accept="image/*" multiple onFiles={(fs) => setPhotos(fs.slice(0, 5))}>
+          <Icon name="photo-plus" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>拖曳或點擊選擇照片（最多 5 張）</p>
+        </FileDrop>
         {photos.length > 0 && <p className="hint">已選擇 {photos.length} 張照片</p>}
       </Field>
       <label className="check-line start"><input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} /><span>匿名評價</span></label>
@@ -278,7 +276,6 @@ export function MemoryModal({ tourId, tourTitle, onClose }: { tourId: string; to
   const publishMemory = usePublishMemory()
   const [files, setFiles] = useState<File[]>([])
   const [caption, setCaption] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
 
   async function publish() {
     if (!files.length) return toast('請至少選擇一張照片', 'alert-circle')
@@ -290,10 +287,9 @@ export function MemoryModal({ tourId, tourTitle, onClose }: { tourId: string; to
   return (
     <Modal onClose={onClose} title="我的旅遊回憶" sub={tourTitle}>
       <Field label="選擇照片">
-        <div className="upload-zone" onClick={() => fileRef.current?.click()}>
-          <Icon name="camera-heart" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>點擊選擇旅遊照片</p>
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => setFiles([...(e.target.files || [])])} />
-        </div>
+        <FileDrop accept="image/*" multiple onFiles={setFiles}>
+          <Icon name="camera-heart" /><p className="muted" style={{ fontSize: 13, marginTop: 6 }}>拖曳旅遊照片到這裡，或點擊選擇</p>
+        </FileDrop>
         {files.length > 0 && <p className="hint">已選擇 {files.length} 張照片</p>}
       </Field>
       <Field label="照片說明"><textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="寫下這趟旅程的回憶…" /></Field>

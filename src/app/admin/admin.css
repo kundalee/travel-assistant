@@ -601,6 +601,7 @@ select.filt { padding:9px 12px; border:1px solid var(--border2); border-radius:v
   background:var(--surface); color:var(--muted); cursor:pointer; font-size:17px; display:flex; align-items:center; justify-content:center; transition:var(--t); }
 .page-head .ph-title .back:hover { border-color:var(--accent); color:var(--accent); }
 .page-head .ph-title i.tt { color:var(--accent); font-size:23px; }
+.page-head .ph-acts { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
 .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
 .toolbar .search-box { flex:1; min-width:260px; max-width:460px; margin:0; }
 .toolbar .filt { min-width:150px; }
