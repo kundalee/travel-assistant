@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authApi, type Role } from '../../api/auth'
-import { DEMO_ACCOUNTS } from '../../api/mocks/auth'
+import { authApi, type RegisterInput, type Role } from '../../api/auth'
 import { Icon, toast, Toaster } from '../../components'
 import { errMsg } from '../../lib/utils'
 import './auth.css'
 import { useAuth } from './AuthProvider'
 import { PORTALS } from './portals'
+import { testAccountsFor, testAccountsLabel } from './testAccounts'
 
 const REMEMBER_KEY = 'auth_email'
 
@@ -24,7 +24,7 @@ function LoginForm({ role }: { role: Role }) {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
-  const demos = authApi.mock ? DEMO_ACCOUNTS.filter((a) => a.listedOn === role) : []
+  const demos = testAccountsFor(role)
 
   async function submit(e?: FormEvent, creds = { email, pw }) {
     e?.preventDefault()
@@ -67,7 +67,7 @@ function LoginForm({ role }: { role: Role }) {
         <div className="am-demo">
           <Icon name="flask" />
           <div>
-            <b>體驗帳號（Demo）</b>
+            <b>{testAccountsLabel()}</b>
             {demos.map((d) => (
               <div key={d.email}>
                 帳號　{d.email}<br />密碼　{d.password}
@@ -83,7 +83,7 @@ function LoginForm({ role }: { role: Role }) {
   )
 }
 
-function RegisterForm({ role, onDone }: { role: 'traveler' | 'partner'; onDone: () => void }) {
+function RegisterForm({ role, onDone }: { role: RegisterInput['role']; onDone: () => void }) {
   const { register } = useAuth()
   const [f, setF] = useState({ name: '', email: '', pw: '', pw2: '', terms: false })
   const [err, setErr] = useState('')
@@ -102,7 +102,7 @@ function RegisterForm({ role, onDone }: { role: 'traveler' | 'partner'; onDone: 
       const u = await register({ name: f.name.trim(), email: f.email.trim(), password: f.pw, role })
       if (u) toast('註冊成功，已自動登入')
       else {
-        setOk(role === 'partner' ? '註冊成功！請至信箱完成驗證，待管理員審核後即可登入。' : '註冊成功！請至信箱完成驗證後登入。')
+        setOk(role === 'agent' ? '註冊成功！請至信箱完成驗證，待管理員審核後即可登入。' : '註冊成功！請至信箱完成驗證後登入。')
         setTimeout(onDone, 1800)
       }
     } catch (ex) {
@@ -182,7 +182,7 @@ export default function AuthModal({ role }: { role: Role }) {
             )}
             {mode === 'login' || !canRegister
               ? <LoginForm role={role} />
-              : <RegisterForm role={p.role as 'traveler' | 'partner'} onDone={() => setMode('login')} />}
+              : <RegisterForm role={p.role as RegisterInput['role']} onDone={() => setMode('login')} />}
             <div className="am-divider">或使用以下方式{mode === 'register' ? '註冊' : '登入'}</div>
             <div className="am-two">
               <button type="button" className="am-btn ghost social g" onClick={() => oauth('google')}><Icon name="brand-google" />Google</button>

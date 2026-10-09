@@ -97,8 +97,8 @@ function UsersView({ data }: { data: Pick<AdminData, 'users'> }) {
           <option value="all">全部角色</option>
           <option value="admin">作業人員（管理員）</option>
           <option value="guide">領隊導遊管理</option>
-          <option value="traveler">團會員管理</option>
-          <option value="partner">支援店家</option>
+          <option value="member">團會員管理</option>
+          <option value="agent">支援店家</option>
         </select>
       </div>
       <DataNote />

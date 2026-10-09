@@ -30,7 +30,7 @@ const write = (api: Api, fn: (ctx: Ctx) => unknown) =>
 /* email 一律取自登入帳號；儲存時整理欄位並回傳儲存結果 */
 const partnerProfile = (userId: string): Profile => {
   const u = publicUser(userId)
-  return { ...(db().profiles[userId] ?? { name: u?.name ?? '', national_id: '', birthday: '' }), email: u?.email ?? '' }
+  return { ...(db().profiles[userId] ?? { name: u?.full_name ?? '', national_id: '', birthday: '' }), email: u?.email ?? '' }
 }
 read(profileApi.get, (ctx) => partnerProfile(ctx.userId!))
 write(profileApi.save, (ctx) => {

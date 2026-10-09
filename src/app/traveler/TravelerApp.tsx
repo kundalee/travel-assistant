@@ -17,7 +17,7 @@ import Ongoing from './pages/Ongoing'
 export default function TravelerApp() {
   useTitle('TravelAssistant — 團員 Traveler')
   return (
-    <PortalGate role="traveler">
+    <PortalGate role="member">
       <div className="portal-traveler">
         <GbCartProvider>
           <Routes>

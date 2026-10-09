@@ -1,4 +1,4 @@
-/* 假後端：登入 / 註冊 */
+/* 假後端：登入 / 註冊（回應格式與真正後端相同：登入回 access token，帳號由 /auth/me 取得） */
 import { DEMO_ACCOUNTS, publicUser } from '../mocks/auth'
 import { authEndpoints as ep, type RegisterInput } from '../auth'
 import { FakeError, json, makeToken, requireUser, route } from './server'
@@ -7,7 +7,7 @@ route(ep.login, (ctx) => {
   const { email = '', password = '' } = json<{ email?: string; password?: string }>(ctx)
   const acc = DEMO_ACCOUNTS.find((a) => a.email === email.toLowerCase() && a.password === password)
   if (!acc) throw new FakeError(401, '電子郵件或密碼錯誤。')
-  return { token: makeToken(acc.id), user: publicUser(acc.id) }
+  return { access_token: makeToken(String(acc.id)), token_type: 'bearer', expires_in: 7 * 24 * 3600 }
 })
 
 route(ep.register, (ctx) => {

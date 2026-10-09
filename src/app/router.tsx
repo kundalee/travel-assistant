@@ -19,7 +19,7 @@ function RootRedirect() {
   const { user, ready } = useAuth()
   if (!ready) return null
   const last = lastPortal()
-  const role = user ? (last && user.roles.includes(last) ? last : user.roles[0]) : 'traveler'
+  const role = user ? (last && user.roles.includes(last) ? last : user.roles[0]) : 'member'
   return <Navigate to={PORTALS[role].path} replace />
 }
 

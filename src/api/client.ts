@@ -67,6 +67,16 @@ async function fetchFake(endpoint: Endpoint, path: string, params: Record<string
 }
 
 
+/* 錯誤訊息：後端 { error: { code, message } }、FastAPI 預設 { detail }、假後端 { message } */
+type ErrorBody = { error?: { message?: string }; detail?: string | { msg?: string }[]; message?: string } | null
+function errorMessage(data: unknown) {
+  const d = data as ErrorBody
+  if (d?.error?.message) return d.error.message
+  if (typeof d?.detail === 'string') return d.detail
+  if (Array.isArray(d?.detail)) return d.detail.map((x) => x.msg).filter(Boolean).join('；')
+  return d?.message
+}
+
 /* multipart 端點：File / File[] 欄位附加檔案，其餘欄位轉為字串 */
 function toFormData(body: object) {
   const fd = new FormData()
@@ -87,7 +97,7 @@ export async function call<T>(endpoint: Endpoint, params: Record<string, string 
   const { status, data } = fake ? await fetchFake(endpoint, path, strParams, payload) : await fetchReal(path, endpoint.method, payload, signal)
 
   if (USE_FAKE) callLog.add({ method: endpoint.method, path, key: endpointKey(endpoint), status, mode: fake ? 'fake' : 'real', at: Date.now() })
-  if (status >= 400) throw new ApiError(status, (data as { message?: string } | null)?.message || `請求失敗（${status}）`)
+  if (status >= 400) throw new ApiError(status, errorMessage(data) || `請求失敗（${status}）`)
   return data as T
 }
 

@@ -13,7 +13,7 @@ import Profile from './pages/Profile'
 export default function PartnerApp() {
   useTitle('TravelAssistant — 支援店家 Partner')
   return (
-    <PortalGate role="partner">
+    <PortalGate role="agent">
       <div className="portal-partner">
         <Routes>
           <Route element={<Layout />}>

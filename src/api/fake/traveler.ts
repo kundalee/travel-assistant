@@ -46,7 +46,7 @@ const today = () => new Date().toISOString().slice(0, 10).replace(/-/g, '/')
 /* email 一律取自登入帳號；儲存時整理欄位並回傳儲存結果 */
 const travelerProfile = (userId: string): TravelerProfile => {
   const u = publicUser(userId)
-  return { ...(db().profiles[userId] ?? { ...EMPTY_PROFILE, name: u?.name ?? '' }), email: u?.email ?? '' }
+  return { ...(db().profiles[userId] ?? { ...EMPTY_PROFILE, name: u?.full_name ?? '' }), email: u?.email ?? '' }
 }
 read(profileApi.get, (ctx) => travelerProfile(ctx.userId!))
 write(profileApi.save, (ctx) => {

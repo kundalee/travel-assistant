@@ -16,7 +16,7 @@ export const IMG = {
 }
 
 export const PAYLABEL: Record<string, string> = { card: '信用卡', linepay: 'LINE Pay', mobilepay: '行動支付', cvs: '超商代碼', atm: 'ATM 轉帳', guide: '現場付款' }
-export const ROLE_TW: Record<Role, string> = { traveler: '團員', guide: '領隊導遊', partner: '支援店家', admin: '管理員' }
+export const ROLE_TW: Record<Role, string> = { member: '團員', guide: '領隊導遊', agent: '支援店家', admin: '管理員' }
 export { STATUS_ALL } from '../../lib/orders'
 export const TOUR_STATUS_TW: Record<TourStatus, string> = { preparing: '準備中', upcoming: '即將出發', ongoing: '進行中', completed: '已完成' }
 export const HISTORY_AFTER_DAYS = 3 /* 結束日 +3 天後歸入歷史行程 */
@@ -35,12 +35,12 @@ export const ANN_TYPES: Record<AnnCat, string[]> = { 每日公告: ['晨喚', '�
 
 export const SAMPLE: AdminCollections = {
   users: [
-    { id: 'u1', full_name: '王大明', email: 'guide@a.com', roles: ['guide', 'traveler'], phone: '0912-345-678', avatar_url: IMG.a2, status: 'on' },
-    { id: 'u2', full_name: '林小美', email: 'trav1@a.com', roles: ['traveler'], phone: '0922-111-222', avatar_url: IMG.a1, status: 'on' },
-    { id: 'u3', full_name: '京都物產店', email: 'store@a.com', roles: ['partner'], phone: '0933-444-555', avatar_url: IMG.a3, status: 'on' },
-    { id: 'u4', full_name: '陳志豪', email: 'trav2@a.com', roles: ['traveler'], phone: '0955-666-777', avatar_url: IMG.a4, status: 'on' },
+    { id: 'u1', full_name: '王大明', email: 'guide@a.com', roles: ['guide', 'member'], phone: '0912-345-678', avatar_url: IMG.a2, status: 'on' },
+    { id: 'u2', full_name: '林小美', email: 'trav1@a.com', roles: ['member'], phone: '0922-111-222', avatar_url: IMG.a1, status: 'on' },
+    { id: 'u3', full_name: '京都物產店', email: 'store@a.com', roles: ['agent'], phone: '0933-444-555', avatar_url: IMG.a3, status: 'on' },
+    { id: 'u4', full_name: '陳志豪', email: 'trav2@a.com', roles: ['member'], phone: '0955-666-777', avatar_url: IMG.a4, status: 'on' },
     { id: 'u5', full_name: '系統管理員', email: 'admin@a.com', roles: ['admin'], phone: '', avatar_url: '', status: 'on' },
-    { id: 'u6', full_name: '黃雅婷', email: 'trav3@a.com', roles: ['traveler'], phone: '0966-888-999', avatar_url: IMG.a5, status: 'off' },
+    { id: 'u6', full_name: '黃雅婷', email: 'trav3@a.com', roles: ['member'], phone: '0966-888-999', avatar_url: IMG.a5, status: 'off' },
   ],
   /* 行程來源：旅行社 CRM / 行程建立系統 API 同步（本系統不自行產生行程） */
   tours: [

@@ -50,7 +50,7 @@ function deliverCall(c: Campaign, codes: string[]) {
 /* ── 個人資料 Profile ── */
 read(profileApi.get, (ctx) => {
   const u = publicUser(ctx.userId!)
-  return { ...DEMO_PROFILE, name: u?.name ?? DEMO_PROFILE.name, email: u?.email ?? '' }
+  return { ...DEMO_PROFILE, name: u?.full_name ?? DEMO_PROFILE.name, email: u?.email ?? '' }
 })
 
 /* ── 行程 Tours ── */
