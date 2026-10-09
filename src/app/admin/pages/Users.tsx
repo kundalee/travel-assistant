@@ -28,10 +28,13 @@ function UserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [name, setName] = useState(user.full_name || '')
   const [roles, setRoles] = useState<Role[]>(user.roles)
   const [phone, setPhone] = useState(user.phone || '')
+  const [active, setActive] = useState(user.is_active)
 
   async function save() {
+    if (!name.trim()) return toast('請輸入姓名', 'alert-circle')
     if (!roles.length) return toast('請至少選擇一個身分', 'alert-circle')
-    if (await update('users', user.id, { full_name: name.trim(), roles, phone: phone.trim() }, '已更新使用者')) onClose()
+    const changes = { full_name: name.trim(), roles, phone: phone.trim() || null, is_active: active }
+    if (await update('users', user.id, changes, '已更新使用者')) onClose()
   }
 
   return (
@@ -40,6 +43,12 @@ function UserModal({ user, onClose }: { user: User; onClose: () => void }) {
       <Field label="信箱"><input value={user.email} disabled /></Field>
       <Field label="身分" hint="可複選"><RolePicker value={roles} onChange={setRoles} /></Field>
       <Field label="電話"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="選填" /></Field>
+      <Field label="帳號狀態" hint="停用後無法登入">
+        <div className="seg">
+          <button type="button" className={active ? 'on' : ''} onClick={() => setActive(true)}>啟用</button>
+          <button type="button" className={!active ? 'on' : ''} onClick={() => setActive(false)}>停用</button>
+        </div>
+      </Field>
       <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存</AsyncButton>
     </Modal>
   )
@@ -51,12 +60,15 @@ export function CreateUserModal({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
   const [roles, setRoles] = useState<Role[]>(['guide'])
   const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
 
   async function save() {
     if (!name.trim()) return toast('請輸入姓名', 'alert-circle')
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) return toast('請輸入有效的信箱', 'alert-circle')
+    if (password.length < 8) return toast('初始密碼至少 8 碼', 'alert-circle')
     if (!roles.length) return toast('請至少選擇一個身分', 'alert-circle')
-    if (await create('users', { full_name: name.trim(), email: email.trim(), roles, phone: phone.trim(), status: 'on' }, '已建立使用者帳號', 'user-check')) onClose()
+    const item = { full_name: name.trim(), email: email.trim(), password, roles, phone: phone.trim() || null }
+    if (await create('users', item, '已建立使用者帳號，請將初始密碼告知使用者', 'user-check')) onClose()
   }
 
   return (
@@ -65,7 +77,9 @@ export function CreateUserModal({ onClose }: { onClose: () => void }) {
       <Field label="信箱"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="guide@agency.com" /></Field>
       <Field label="身分" hint="可複選"><RolePicker value={roles} onChange={setRoles} /></Field>
       <Field label="電話"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="選填" /></Field>
-      <p className="hint" style={{ marginBottom: '0.9rem' }}>帳號建立後，初始密碼與通知信由後端寄送。</p>
+      <Field label="初始密碼" hint="至少 8 碼；建立後請告知使用者，登入後可自行修改">
+        <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 8 碼" autoComplete="new-password" />
+      </Field>
       <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="user-plus" />建立帳號</AsyncButton>
     </Modal>
   )
@@ -84,7 +98,7 @@ function UsersView({ data }: { data: Pick<AdminData, 'users'> }) {
 
   const list = data.users.filter((u) =>
     (role === 'all' || u.roles.includes(role)) &&
-    includesQ([u.full_name, u.email, u.phone, ...u.roles.map((r) => ROLE_TW[r]), u.store_name, u.emp_no], q))
+    includesQ([u.full_name, u.email, u.phone, ...u.roles.map((r) => ROLE_TW[r])], q))
 
   return (
     <div className="pad">
@@ -101,20 +115,22 @@ function UsersView({ data }: { data: Pick<AdminData, 'users'> }) {
           <option value="agent">支援店家</option>
         </select>
       </div>
-      <DataNote />
+      <DataNote group="admin.users" />
       <div className="card-wrap">
         <table className="dtable">
-          <thead><tr><th style={{ width: 56 }} /><th>姓名 / 信箱</th><th style={{ width: 150 }}>電話</th><th style={{ width: 130 }}>角色</th><th style={{ width: 70 }}>工具</th></tr></thead>
+          <thead><tr><th style={{ width: 56 }} /><th>姓名 / 信箱</th><th style={{ width: 150 }}>電話</th><th style={{ width: 130 }}>角色</th><th style={{ width: 90 }}>狀態</th><th style={{ width: 120 }}>最後登入</th><th style={{ width: 70 }}>工具</th></tr></thead>
           <tbody>
             {list.length ? list.map((u) => (
               <tr key={u.id}>
-                <td><img className="lav" style={{ width: 36, height: 36 }} src={u.avatar_url || avatarUrl(u.full_name)} alt="" /></td>
+                <td><img className="lav" style={{ width: 36, height: 36 }} src={avatarUrl(u.full_name)} alt="" /></td>
                 <td><div className="t-title">{u.full_name || '（未命名）'}</div><div className="t-sub">{u.email}</div></td>
                 <td className="t-sub">{u.phone || '—'}</td>
                 <td><div className="rbadges">{u.roles.map((r) => <span key={r} className={`rbadge ${r}`}>{ROLE_TW[r]}</span>)}</div></td>
+                <td><span className={`st-badge ${u.is_active ? 'on' : 'off'}`}>{u.is_active ? '啟用' : '停用'}</span></td>
+                <td className="t-sub">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('zh-TW') : '—'}</td>
                 <td><div className="dt-acts"><button onClick={() => setEditing(u)} title="編輯"><Icon name="edit" /></button></div></td>
               </tr>
-            )) : <TableEmpty cols={5} icon="users" text="查無使用者" />}
+            )) : <TableEmpty cols={7} icon="users" text="查無使用者" />}
           </tbody>
         </table>
       </div>

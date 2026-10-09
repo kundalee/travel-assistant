@@ -25,14 +25,15 @@ export {
   salesApi, trackingApi, reportsApi, aiApi,
 }
 
-/** true = 使用者群組由假後端回應 */
-export const mock = isFake('admin.users')
+/** true = 後台資料由假後端回應（個別群組見 isFake，例如 isFake('admin.users')） */
+export const mock = isFake('admin')
 
 /* ── 可新增 / 修改 / 刪除的清單（store 的 create / update / remove 依 key 呼叫對應的 API） ── */
+type Id = string | number
 type CrudApi<T> = {
-  create?: (body: Omit<T, 'id'>) => Promise<T>
-  update?: (params: { id: string }, body: Partial<T>) => Promise<T>
-  remove?: (params: { id: string }) => Promise<void>
+  create?: (body: never) => Promise<T>
+  update?: (params: { id: Id }, body: never) => Promise<T>
+  remove?: (params: { id: Id }) => Promise<void>
 }
 
 export const editable = {
@@ -42,8 +43,10 @@ export const editable = {
 
 export type EditableKey = keyof typeof editable
 export type Item<K extends EditableKey> = AdminCollections[K][number]
-/** 新增時不帶 id，由後端產生 */
-export type NewItem<K extends EditableKey> = Omit<Item<K>, 'id'>
+/** 新增時送出的內容（各清單的 create 請求內容；通常為不含 id 的資料，帳號則為 UserCreate） */
+export type NewItem<K extends EditableKey> = (typeof editable)[K] extends { create: (body: infer B) => unknown } ? B : never
+/** 修改時送出的內容（各清單的 update 請求內容） */
+export type ItemChanges<K extends EditableKey> = (typeof editable)[K] extends { update: (params: never, body: infer B) => unknown } ? B : never
 
 /** 依清單 key 取得其 create / update / remove（不支援的操作為 undefined） */
 export function crudOf<K extends EditableKey>(key: K) {

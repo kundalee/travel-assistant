@@ -119,7 +119,7 @@ function TourModal({ tour, onClose }: { tour: Tour | null; onClose: () => void }
     const guide_id = guideId || null
     const rec = {
       title: title.trim(), dest: dest.trim(), country: (dest.split(',').pop() || '').trim(), dates_text: dates.trim(),
-      guide_id, guide_name: guides.find((g) => g.id === guide_id)?.full_name || '', places,
+      guide_id, guide_name: guides.find((g) => String(g.id) === guide_id)?.full_name || '', places,
     }
     let saved: Tour | undefined
     if (tour) {
@@ -150,7 +150,7 @@ function TourModal({ tour, onClose }: { tour: Tour | null; onClose: () => void }
         <Field label="領隊">
           <select className="filt" style={{ width: '100%' }} value={guideId} onChange={(e) => setGuideId(e.target.value)}>
             <option value="">（未指派）</option>
-            {guides.map((g) => <option key={g.id} value={g.id}>{g.full_name}</option>)}
+            {guides.map((g) => <option key={g.id} value={String(g.id)}>{g.full_name}</option>)}
           </select>
         </Field>
         <Field label="旅遊地點" hint="勾選本行程的地點，可於地點下新增紀念商品">

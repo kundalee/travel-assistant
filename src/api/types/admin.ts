@@ -1,4 +1,4 @@
-import type { Role } from '../auth'
+import type { Role, UserRead } from '../auth'
 
 export type { Role }
 export type TourStatus = 'preparing' | 'upcoming' | 'ongoing' | 'completed'
@@ -6,17 +6,26 @@ export type ProductKind = 'souvenir' | 'deal' | 'boutique'
 export type { OrderStatus } from '../../lib/orders'
 import type { OrderStatus } from '../../lib/orders'
 
-export interface User {
-  id: string
-  full_name: string
+/** 帳號（與後端 UserRead 相同；GET /users） */
+export type User = UserRead
+
+/** 建立帳號（POST /users）：初始密碼由管理員設定 */
+export interface UserCreate {
   email: string
-  /** 一個帳號可擁有多個身分 */
+  /** 8–128 字元 */
+  password: string
+  full_name: string
+  phone?: string | null
+  /** 至少一個 */
   roles: Role[]
-  phone?: string
-  avatar_url?: string
-  status?: 'on' | 'off'
-  store_name?: string
-  emp_no?: string
+}
+
+/** 修改帳號（PATCH /users/:id）：未帶的欄位不變 */
+export interface UserUpdate {
+  full_name?: string
+  phone?: string | null
+  is_active?: boolean
+  roles?: Role[]
 }
 
 export interface Tour {

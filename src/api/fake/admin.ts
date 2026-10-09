@@ -1,7 +1,7 @@
 /* 假後端：後台管理 */
 import { clone } from '../../lib/utils'
 import { IMG, RECEIVABLE, ROSTER_SEED, SAMPLE, STATS, VITALS, ZONES } from '../mocks/admin'
-import type { AdminCollections, RosterEntry, Tour } from '../types/admin'
+import type { AdminCollections, RosterEntry, Tour, User, UserCreate, UserUpdate } from '../types/admin'
 import type { Endpoint } from '../endpoints'
 import {
   aiApi, announcementsApi, bookingsApi, campaignsApi, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi,
@@ -9,7 +9,7 @@ import {
 } from '../admin'
 import { FakeError, json, persisted, requireUser, route, type Ctx } from './server'
 
-const store = persisted('fake_admin_db', () => clone(SAMPLE))
+const store = persisted('fake_admin_db_v2', () => clone(SAMPLE))
 const db = () => store.get()
 
 type Key = keyof AdminCollections
@@ -75,7 +75,27 @@ function collection(key: Key, api: CollectionApi, prefix: string, map = (r: Row)
   }
 }
 
-collection('users', usersApi, 'u')
+/* 帳號：與真正後端相同（數字 id、初始密碼至少 8 碼、email 不可重複；回傳不含密碼） */
+route(usersApi.list, handler(() => db().users))
+route(usersApi.create, handler((ctx) => {
+  const { password = '', ...input } = json<UserCreate>(ctx)
+  if (password.length < 8) throw new FakeError(422, 'body.password: String should have at least 8 characters')
+  if (!input.roles?.length) throw new FakeError(422, 'body.roles: List should have at least 1 item')
+  if (db().users.some((u) => u.email.toLowerCase() === input.email?.toLowerCase())) throw new FakeError(409, 'Email already registered')
+  const user: User = {
+    id: Math.max(0, ...db().users.map((u) => u.id)) + 1, email: input.email, full_name: input.full_name, phone: input.phone || null,
+    roles: input.roles, is_active: true, last_login_at: null, created_at: new Date().toISOString(),
+  }
+  db().users.push(user)
+  return user
+}, true))
+route(usersApi.update, handler((ctx) => {
+  const user = db().users.find((u) => String(u.id) === ctx.params.id)
+  if (!user) throw new FakeError(404, 'User not found')
+  const changes = json<UserUpdate>(ctx)
+  Object.entries(changes).forEach(([k, v]) => { if (v !== undefined) (user as unknown as Record<string, unknown>)[k] = v })
+  return user
+}, true))
 collection('tours', toursApi, 't', (r) => withCount(r as Tour), (r) => { (r as Tour).img_url ||= IMG.kyoto })
 collection('orders', ordersApi, 'o')
 collection('bookings', bookingsApi, 'b')

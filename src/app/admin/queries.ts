@@ -8,7 +8,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { toast, type IconName } from '../../components'
 import {
   announcementsApi, bookingsApi, campaignsApi, crudOf, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi, trackingApi,
-  usersApi, vendorsApi, type EditableKey, type Item, type NewItem,
+  usersApi, vendorsApi, type EditableKey, type Item, type ItemChanges, type NewItem,
 } from '../../api/admin'
 import type { AdminData } from '../../api/types/admin'
 
@@ -67,7 +67,8 @@ export function useAdminData<K extends DataKey>(...keys: K[]) {
 export const useRoster = (tourId: string) =>
   useQuery({ queryKey: adminKeys.roster(tourId), queryFn: () => toursApi.members({ id: tourId }) })
 
-type Row = { id: string }
+type Id = string | number
+type Row = { id: Id }
 
 /** 清單的新增 / 修改 / 刪除：以後端回應更新快取；成功時顯示 msg */
 export function useCrud() {
@@ -83,7 +84,7 @@ export function useCrud() {
     onSuccess: (saved, { key }) => setList(key, (l) => [saved, ...l]),
   })
   const updateM = useMutation({
-    mutationFn: ({ key, id, changes }: { key: EditableKey; id: string; changes: object }) => {
+    mutationFn: ({ key, id, changes }: { key: EditableKey; id: Id; changes: object }) => {
       const api = crudOf(key)
       if (!api.update) throw new Error(`${key} 不支援修改`)
       return api.update({ id }, changes as never) as Promise<Row>
@@ -91,7 +92,7 @@ export function useCrud() {
     onSuccess: (saved, { key }) => setList(key, (l) => l.map((x) => (x.id === saved.id ? saved : x))),
   })
   const removeM = useMutation({
-    mutationFn: ({ key, id }: { key: EditableKey; id: string }) => {
+    mutationFn: ({ key, id }: { key: EditableKey; id: Id }) => {
       const api = crudOf(key)
       if (!api.remove) throw new Error(`${key} 不支援刪除`)
       return api.remove({ id })
@@ -103,18 +104,18 @@ export function useCrud() {
   return {
     /** 新增：回傳後端建立的資料（含 id）；失敗回傳 undefined */
     create: async <K extends EditableKey>(key: K, item: NewItem<K>, msg?: string, icon?: IconName) => {
-      const saved = await createM.mutateAsync({ key, item }).catch(() => undefined)
+      const saved = await createM.mutateAsync({ key, item: item as object }).catch(() => undefined)
       if (saved) done(msg, icon)
       return saved as Item<K> | undefined
     },
     /** 修改：回傳後端更新後的資料；失敗回傳 undefined */
-    update: async <K extends EditableKey>(key: K, id: string, changes: Partial<Item<K>>, msg?: string, icon?: IconName) => {
-      const saved = await updateM.mutateAsync({ key, id, changes }).catch(() => undefined)
+    update: async <K extends EditableKey>(key: K, id: Id, changes: ItemChanges<K>, msg?: string, icon?: IconName) => {
+      const saved = await updateM.mutateAsync({ key, id, changes: changes as object }).catch(() => undefined)
       if (saved) done(msg, icon)
       return saved as Item<K> | undefined
     },
     /** 刪除：回傳是否成功 */
-    remove: async (key: EditableKey, id: string, msg?: string) => {
+    remove: async (key: EditableKey, id: Id, msg?: string) => {
       const ok = await removeM.mutateAsync({ key, id }).then(() => true, () => false)
       if (ok) done(msg, 'trash')
       return ok
