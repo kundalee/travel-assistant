@@ -102,9 +102,9 @@ export const SAMPLE: AdminCollections = {
   ],
   /* 支援店家：與後端 ShopRead 相同格式 */
   shops: [
-    { id: 1, name: '京都物產株式會社', contact_name: '山田太郎', phone: '+81-75-123-4567', email: 'info@kyoto-bussan.jp', address: '東山區清水 2-1', city: '京都', country: '日本', agency_rate: '0.1500', settlement_cycle: 'monthly', is_active: true, place_ids: [], created_at: '2026-01-10T09:00:00Z' },
-    { id: 2, name: '宇治茶園商事', contact_name: '鈴木花子', phone: '+81-774-88-1234', email: null, address: '宇治市宇治蓮華 5', city: '宇治', country: '日本', agency_rate: '0.1200', settlement_cycle: 'per_tour', is_active: true, place_ids: [], created_at: '2026-02-03T09:00:00Z' },
-    { id: 3, name: '北海道海產直送', contact_name: '佐藤健', phone: '+81-11-222-3333', email: null, address: '中央區', city: '札幌', country: '日本', agency_rate: '0.1000', settlement_cycle: 'monthly', is_active: false, place_ids: [], created_at: '2026-03-15T09:00:00Z' },
+    { id: 1, name: '京都物產株式會社', contact_name: '山田太郎', phone: '+81-75-123-4567', email: 'info@kyoto-bussan.jp', address: '東山區清水 2-1', city: '京都', country: 'JP', agency_rate: '0.1500', settlement_cycle: 'monthly', is_active: true, place_ids: [], created_at: '2026-01-10T09:00:00Z' },
+    { id: 2, name: '宇治茶園商事', contact_name: '鈴木花子', phone: '+81-774-88-1234', email: null, address: '宇治市宇治蓮華 5', city: '宇治', country: 'JP', agency_rate: '0.1200', settlement_cycle: 'per_tour', is_active: true, place_ids: [], created_at: '2026-02-03T09:00:00Z' },
+    { id: 3, name: '北海道海產直送', contact_name: '佐藤健', phone: '+81-11-222-3333', email: null, address: '中央區', city: '札幌', country: 'JP', agency_rate: '0.1000', settlement_cycle: 'monthly', is_active: false, place_ids: [], created_at: '2026-03-15T09:00:00Z' },
   ],
   monthly: [
     { month: '2026/07', agency: '範例旅行社', amount: 842000, sent: false },

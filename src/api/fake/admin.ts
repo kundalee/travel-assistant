@@ -2,12 +2,12 @@
 import { clone } from '../../lib/utils'
 import { IMG, RECEIVABLE, ROSTER_SEED, SAMPLE, STATS, VITALS, ZONES } from '../mocks/admin'
 import type {
-  AdminCollections, ImportJob, RosterEntry, Shop, ShopCreate, ShopProduct, ShopProductCreate, ShopProductUpdate, ShopUpdate, Tour, User, UserCreate, UserUpdate,
+  AdminCollections, ImportJob, ItineraryItem, ItineraryItemCreate, ItineraryItemProductWrite, ItineraryItemUpdate, RosterEntry, Shop, ShopCreate, ShopProduct, ShopProductCreate, ShopProductUpdate, ShopUpdate, Tour, User, UserCreate, UserUpdate,
 } from '../types/admin'
 import type { Endpoint } from '../endpoints'
 import {
   aiApi, announcementsApi, bookingsApi, campaignsApi, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi,
-  trackingApi, usersApi, shopsApi, shopProductsApi,
+  trackingApi, usersApi, shopsApi, shopProductsApi, itineraryItemsApi,
 } from '../admin'
 import { FakeError, files, json, persisted, requireUser, route, type Ctx } from './server'
 
@@ -112,6 +112,11 @@ const rate = (v: unknown) => {
   if (v === '' || v == null || !(n >= 0 && n <= 1)) throw new FakeError(422, 'body.agency_rate: Input should be between 0 and 1')
   return n.toFixed(4)
 }
+const shopCountry = (v: unknown) => {
+  if (v == null || v === '') return null
+  if (!/^[A-Za-z]{2}$/.test(String(v))) throw new FakeError(422, 'body.country: Value error, country must be an ISO 3166-1 alpha-2 code such as JP, TW or US')
+  return String(v).toUpperCase()
+}
 route(shopsApi.list, handler(() => db().shops))
 route(shopsApi.create, handler((ctx) => {
   const input = json<ShopCreate>(ctx)
@@ -119,7 +124,7 @@ route(shopsApi.create, handler((ctx) => {
   if (!['per_tour', 'monthly'].includes(input.settlement_cycle)) throw new FakeError(422, "body.settlement_cycle: Input should be 'per_tour' or 'monthly'")
   const shop: Shop = {
     id: Math.max(0, ...db().shops.map((s) => s.id)) + 1, name: input.name, contact_name: input.contact_name ?? null, phone: input.phone ?? null,
-    email: input.email ?? null, address: input.address ?? null, city: input.city ?? null, country: input.country ?? null,
+    email: input.email ?? null, address: input.address ?? null, city: input.city ?? null, country: shopCountry(input.country),
     agency_rate: rate(input.agency_rate), settlement_cycle: input.settlement_cycle, is_active: input.is_active ?? true,
     place_ids: input.place_ids ?? [], created_at: new Date().toISOString(),
   }
@@ -233,7 +238,8 @@ route(shopProductsApi.update, productHandler((ctx) => {
   return product
 }, true))
 route(shopProductsApi.remove, productHandler((ctx) => {
-  productOf(ctx.params.id)
+  const product = productOf(ctx.params.id)
+  if (idb().items.some((x) => x.products.some((p) => p.product_id === product.id))) throw new FakeError(409, 'An itinerary item sells this product; take it off sale instead')
   pdb().products = pdb().products.filter((x) => String(x.id) !== ctx.params.id)
 }, true))
 route(shopProductsApi.importTemplate, productHandler((ctx) => {
@@ -299,9 +305,100 @@ route(shopsApi.update, handler((ctx) => {
   const changes = json<ShopUpdate>(ctx)
   Object.entries(changes).forEach(([k, v]) => {
     if (v === undefined) return
-    ;(shop as unknown as Record<string, unknown>)[k] = k === 'agency_rate' ? rate(v) : v
+    ;(shop as unknown as Record<string, unknown>)[k] = k === 'agency_rate' ? rate(v) : k === 'country' ? shopCountry(v) : v
   })
   return shop
+}, true))
+
+/* ── 旅遊地點（行程項目）：與真正後端相同（數字 id，不屬於任何行程；國別為 ISO 二碼；商品可混合幣別、可含已下架商品，
+      售價 / 分潤比例可另訂並以小數字串回傳；複製時連同商品） ── */
+const seedItem = (id: number, name: string, city: string, address: string | null, meeting_point: string | null): ItineraryItem => ({
+  id, name, address, city, country: 'JP', meeting_point, products: [], created_at: '2026-02-01T09:00:00Z',
+})
+const istore = persisted('fake_itinerary_items_v1', () => ({
+  items: [
+    seedItem(1, '清水寺 · 二年坂', '京都', '京都市東山區清水 1-294', '仁王門前'),
+    seedItem(2, '八坂神社 · 祇園', '京都', '京都市東山區祇園町北側 625', null),
+    seedItem(3, '宇治平等院', '宇治', '宇治市宇治蓮華 116', '表參道入口'),
+  ],
+}))
+const idb = () => istore.get()
+const itemHandler = (fn: (ctx: Ctx) => unknown, save = false) => (ctx: Ctx) => {
+  requireUser(ctx)
+  const out = fn(ctx)
+  if (save) istore.save()
+  return out
+}
+const itemOf = (id: string) => {
+  const item = idb().items.find((s) => String(s.id) === id)
+  if (!item) throw new FakeError(404, 'Itinerary item not found')
+  return item
+}
+const nextItemId = () => Math.max(0, ...idb().items.map((s) => s.id)) + 1
+function checkItem(s: ItineraryItemUpdate, creating: boolean) {
+  const errors: { field: string; message: string }[] = []
+  if ((creating || s.name !== undefined) && !s.name?.trim()) errors.push({ field: 'name', message: creating && s.name === undefined ? 'Field required' : 'String should have at least 1 character' })
+  if (s.country && !/^[A-Za-z]{2}$/.test(s.country)) errors.push({ field: 'country', message: 'Value error, country must be an ISO 3166-1 alpha-2 code such as JP, TW or US' })
+  return errors
+}
+const itemFields = (s: ItineraryItemUpdate) => ({ ...s, ...(s.country && { country: s.country.toUpperCase() }) })
+
+route(itineraryItemsApi.list, itemHandler((ctx) => {
+  const qp = ctx.query
+  const q = (qp.get('q') ?? '').toLowerCase()
+  const limit = Math.min(500, Math.max(1, Number(qp.get('limit') ?? 100)))
+  const offset = Math.max(0, Number(qp.get('offset') ?? 0))
+  return idb().items
+    .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.address ?? '').toLowerCase().includes(q))
+    .filter((x) => !qp.get('city') || x.city === qp.get('city'))
+    .filter((x) => !qp.get('country') || x.country === qp.get('country')?.toUpperCase())
+    .slice(offset, offset + limit)
+}))
+route(itineraryItemsApi.create, itemHandler((ctx) => {
+  const input = json<ItineraryItemCreate>(ctx)
+  failOn(checkItem(input, true))
+  const item: ItineraryItem = { ...seedItem(nextItemId(), '', '', null, null), city: null, country: null, ...itemFields(input), products: [], created_at: new Date().toISOString() }
+  idb().items.push(item)
+  return item
+}, true))
+route(itineraryItemsApi.update, itemHandler((ctx) => {
+  const item = itemOf(ctx.params.id)
+  const changes = json<ItineraryItemUpdate>(ctx)
+  failOn(checkItem(changes, false))
+  Object.entries(itemFields(changes)).forEach(([k, v]) => { if (v !== undefined && k in item && k !== 'id' && k !== 'products') (item as unknown as Record<string, unknown>)[k] = v })
+  return item
+}, true))
+route(itineraryItemsApi.remove, itemHandler((ctx) => {
+  const item = itemOf(ctx.params.id)
+  idb().items = idb().items.filter((s) => s !== item)
+}, true))
+route(itineraryItemsApi.duplicate, itemHandler((ctx) => {
+  const item = itemOf(ctx.params.id)
+  const { name } = json<{ name?: string | null }>(ctx)
+  const copy: ItineraryItem = { ...clone(item), id: nextItemId(), name: name?.trim() || `${item.name} (copy)`, created_at: new Date().toISOString() }
+  idb().items.push(copy)
+  return copy
+}, true))
+route(itineraryItemsApi.products, itemHandler((ctx) => itemOf(ctx.params.id).products))
+route(itineraryItemsApi.setProducts, itemHandler((ctx) => {
+  const item = itemOf(ctx.params.id)
+  const { products = [] } = json<{ products?: ItineraryItemProductWrite[] }>(ctx)
+  const rows = products.map((w, i) => {
+    const p = pdb().products.find((x) => x.id === Number(w.product_id))
+    if (!p) throw new FakeError(404, `Product ${w.product_id} not found`)
+    if (w.price_override != null && !(Number(w.price_override) >= 0)) throw new FakeError(422, `body.products.${i}.price_override: Input should be greater than or equal to 0`)
+    const share = w.commission_share_override
+    if (share != null && !(Number(share) >= 0 && Number(share) <= 1)) throw new FakeError(422, `body.products.${i}.commission_share_override: Input should be less than or equal to 1`)
+    const price = w.price_override != null ? Number(w.price_override).toFixed(2) : null
+    const shareStr = share != null ? Number(share).toFixed(4) : null
+    return {
+      product_id: p.id, sku: p.sku, product_name: p.name, currency: p.currency, price: price ?? p.price,
+      commission_share: shareStr ?? p.default_commission_share, price_override: price, commission_share_override: shareStr,
+    }
+  })
+  if (new Set(rows.map((x) => x.product_id)).size !== rows.length) throw new FakeError(422, 'Duplicate product in list')
+  item.products = rows
+  return item
 }, true))
 
 /* ── 行程：名冊 / CRM 同步 ── */

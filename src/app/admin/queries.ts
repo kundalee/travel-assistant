@@ -8,9 +8,11 @@ import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } f
 import { toast, type IconName } from '../../components'
 import {
   announcementsApi, bookingsApi, campaignsApi, crudOf, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi, trackingApi,
-  usersApi, shopsApi, shopProductsApi, type EditableKey, type Item, type ItemChanges, type NewItem,
+  usersApi, shopsApi, shopProductsApi, itineraryItemsApi, type EditableKey, type Item, type ItemChanges, type NewItem,
 } from '../../api/admin'
-import type { AdminData, ProductFilters, ShopProductCreate, ShopProductUpdate } from '../../api/types/admin'
+import type {
+  AdminData, ItineraryItemCreate, ItineraryItemProductWrite, ItineraryItemUpdate, ProductFilters, ShopProductCreate, ShopProductUpdate,
+} from '../../api/types/admin'
 
 const LISTS = {
   users: () => usersApi.list(), tours: () => toursApi.list(), orders: () => ordersApi.list(), bookings: () => bookingsApi.list(),
@@ -30,6 +32,8 @@ export const adminKeys = {
   shopProductsAll: ['admin', 'shop-products'] as const,
   allProducts: (filters: object) => ['admin', 'products-all', filters] as const,
   allProductsAll: ['admin', 'products-all'] as const,
+  itineraryItems: ['admin', 'itinerary-items'] as const,
+  pickableProducts: ['admin', 'pickable-products'] as const,
 }
 
 /* 每個 data 欄位的來源查詢（團體追蹤三個欄位共用同一個查詢） */
@@ -175,4 +179,33 @@ export async function downloadProductTemplate(shopId: number, fileFormat: 'csv' 
   const a = Object.assign(document.createElement('a'), { href: url, download: filename })
   a.click()
   URL.revokeObjectURL(url)
+}
+
+/* ── 旅遊地點（行程項目；寫入後重新讀取清單） ── */
+
+/** 所有旅遊地點（後端每次最多 500 筆） */
+export const useItineraryItems = () => useQuery({ queryKey: adminKeys.itineraryItems, queryFn: () => itineraryItemsApi.list({ limit: 500 }) })
+
+/** 可串聯到旅遊地點的商品：所有店家的商品（含已下架） */
+export const usePickableProducts = () =>
+  useQuery({ queryKey: adminKeys.pickableProducts, queryFn: () => shopProductsApi.listAll({ limit: 500 }) })
+
+/** 新增 / 修改 / 複製 / 刪除 / 設定商品：成功後重新讀取旅遊地點清單；失敗訊息由 queryClient 統一顯示 */
+export function useItineraryItemActions() {
+  const qc = useQueryClient()
+  const refresh = () => qc.invalidateQueries({ queryKey: adminKeys.itineraryItems, refetchType: 'all' })
+  return {
+    save: useMutation({
+      mutationFn: (v: { id?: number; body: ItineraryItemCreate | ItineraryItemUpdate }) => v.id
+        ? itineraryItemsApi.update({ id: v.id }, v.body)
+        : itineraryItemsApi.create(v.body as ItineraryItemCreate),
+      onSuccess: refresh,
+    }),
+    duplicate: useMutation({ mutationFn: (id: number) => itineraryItemsApi.duplicate({ id }, {}), onSuccess: refresh }),
+    remove: useMutation({ mutationFn: (id: number) => itineraryItemsApi.remove({ id }), onSuccess: refresh }),
+    setProducts: useMutation({
+      mutationFn: (v: { id: number; products: ItineraryItemProductWrite[] }) => itineraryItemsApi.setProducts({ id: v.id }, { products: v.products }),
+      onSuccess: refresh,
+    }),
+  }
 }

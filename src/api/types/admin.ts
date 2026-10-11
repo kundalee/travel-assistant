@@ -244,6 +244,51 @@ export interface ImportJob {
   created_at: string
 }
 
+/** 旅遊地點販售的商品（GET /itinerary-items/:id/products）；price / commission_share 為實際值，override 為 null 時沿用商品設定 */
+export interface ItineraryItemProduct {
+  product_id: number
+  sku: string
+  product_name: string
+  currency: string
+  price: string
+  commission_share: string
+  price_override: string | null
+  commission_share_override: string | null
+}
+
+/** 旅遊地點（與後端 ItineraryItemRead 相同；GET /itinerary-items）：不屬於任何行程 */
+export interface ItineraryItem {
+  id: number
+  name: string
+  address: string | null
+  city: string | null
+  /** ISO 3166-1 二碼國別（例：JP） */
+  country: string | null
+  meeting_point: string | null
+  products: ItineraryItemProduct[]
+  created_at: string
+}
+
+/** 新增旅遊地點（POST /itinerary-items） */
+export interface ItineraryItemCreate {
+  name: string
+  address?: string | null
+  city?: string | null
+  country?: string | null
+  meeting_point?: string | null
+}
+
+/** 修改旅遊地點（PATCH /itinerary-items/:id）：未帶的欄位不變、null 清除 */
+export type ItineraryItemUpdate = Partial<ItineraryItemCreate>
+
+/** 設定旅遊地點販售的商品（PUT /itinerary-items/:id/products 的一項）；可混合幣別、可含已下架商品 */
+export interface ItineraryItemProductWrite {
+  product_id: number
+  price_override?: number | null
+  /** 0–1 */
+  commission_share_override?: number | null
+}
+
 /** 修改支援店家（PATCH /shops/:id）：未帶的欄位不變、null 清除；停用 = is_active: false */
 export type ShopUpdate = Partial<Omit<ShopCreate, 'place_ids'>>
 

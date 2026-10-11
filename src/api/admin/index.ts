@@ -14,6 +14,7 @@ import { announcementsApi } from './announcements'
 import { campaignsApi } from './campaigns'
 import { productsApi } from './products'
 import { placesApi } from './places'
+import { itineraryItemsApi } from './itineraryItems'
 import { shopsApi } from './shops'
 import { shopProductsApi } from './shopProducts'
 import { salesApi } from './sales'
@@ -22,7 +23,7 @@ import { reportsApi } from './reports'
 import { aiApi } from './ai'
 
 export {
-  usersApi, toursApi, ordersApi, bookingsApi, reviewsApi, announcementsApi, campaignsApi, productsApi, placesApi, shopsApi, shopProductsApi,
+  usersApi, toursApi, ordersApi, bookingsApi, reviewsApi, announcementsApi, campaignsApi, productsApi, placesApi, itineraryItemsApi, shopsApi, shopProductsApi,
   salesApi, trackingApi, reportsApi, aiApi,
 }
 

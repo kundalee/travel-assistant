@@ -1,86 +1,134 @@
 import { useState } from 'react'
-import SouvPicker from '../components/SouvPicker'
-import { AsyncButton, confirmDialog, Empty, Field, Icon, MapEmbed, Modal, PageHead, QueryState, toast } from '../../../components'
-import { useQueryClient } from '@tanstack/react-query'
-import { adminKeys, useAdminData, useCrud } from '../queries'
-import type { AdminData } from '../../../api/types/admin'
-import type { Place, Souvenir } from '../../../api/types/admin'
-import { fmt, parseCoord } from '../utils'
+import { AsyncButton, confirmDialog, Empty, Field, Icon, Modal, PageHead, QueryState, SearchBox, toast } from '../../../components'
+import type { ItineraryItem, ItineraryItemProductWrite, Shop } from '../../../api/types/admin'
+import { DataNote } from '../components/DataNote'
+import { useAdminData, useItineraryItemActions, useItineraryItems, usePickableProducts } from '../queries'
+import { includesQ, money, ratePct, shopName } from '../utils'
 
-function PlaceModal({ place, onClose }: { place: Place | null; onClose: () => void }) {
-  const { create, update } = useCrud()
-  const [name, setName] = useState(place?.name || '')
-  const [coord, setCoord] = useState(place ? `${place.lat}, ${place.lng}` : '')
-  const [desc, setDesc] = useState(place?.desc || '')
-  const [souvenirs, setSouvenirs] = useState<Souvenir[]>(place?.souvenirs || [])
-  const [picking, setPicking] = useState(false)
-  const c = parseCoord(coord)
+const place = (it: ItineraryItem) => [it.address, it.city, it.country].filter(Boolean).join('，')
+const mapUrl = (it: ItineraryItem) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([it.name, it.address, it.city].filter(Boolean).join(' '))}`
 
-  async function save() {
-    if (!name.trim()) return toast('請輸入地點名稱', 'alert-circle')
-    if (!c) return toast('請貼上有效的座標（緯度, 經度）', 'alert-circle')
-    const rec = { name: name.trim(), lat: c.lat, lng: c.lng, desc: desc.trim(), souvenirs }
-    const saved = place ? await update('places', place.id, rec, '旅遊地點已儲存', 'map-pin-check') : await create('places', rec, '旅遊地點已儲存', 'map-pin-check')
-    if (saved) onClose()
+function ItemModal({ item, onClose }: { item: ItineraryItem | null; onClose: () => void }) {
+  const { save } = useItineraryItemActions()
+  const [f, setF] = useState({
+    name: item?.name ?? '', address: item?.address ?? '', city: item?.city ?? '', country: item?.country ?? '', meeting_point: item?.meeting_point ?? '',
+  })
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
+
+  async function submit() {
+    if (!f.name.trim()) return toast('請輸入地點名稱', 'alert-circle')
+    if (f.country.trim() && !/^[A-Za-z]{2}$/.test(f.country.trim())) return toast('國別請填 2 碼（例：JP、TW）', 'alert-circle')
+    const body = {
+      name: f.name.trim(), address: f.address.trim() || null, city: f.city.trim() || null,
+      country: f.country.trim().toUpperCase() || null, meeting_point: f.meeting_point.trim() || null,
+    }
+    await save.mutateAsync({ id: item?.id, body })
+    toast('旅遊地點已儲存', 'map-pin-check')
+    onClose()
   }
 
   return (
-    <>
-      <Modal onClose={onClose} title={place ? '修改旅遊地點' : '新增旅遊地點'} sub="名稱 · Google 座標 · 概述">
-        <Field label="地點名稱"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：清水寺 · 二年坂" /></Field>
-        <Field label="Google 座標" hint="直接貼上（緯度, 經度）">
-          <input value={coord} onChange={(e) => setCoord(e.target.value)} placeholder="34.994856, 135.785046" />
-          <p className="hint">於 Google 地圖上按右鍵，點最上方的座標即可複製，直接貼於此欄。</p>
-        </Field>
-        <Field label="概述"><textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="地點簡介與導覽重點…" /></Field>
+    <Modal onClose={onClose} title={item ? '修改旅遊地點' : '新增旅遊地點'} sub="名稱 · 地址 · 集合地點">
+      <Field label="地點名稱"><input value={f.name} onChange={set('name')} placeholder="例：清水寺 · 二年坂" /></Field>
+      <Field label="地址"><input value={f.address} onChange={set('address')} /></Field>
+      <div className="row-2">
+        <Field label="城市"><input value={f.city} onChange={set('city')} placeholder="例：京都" /></Field>
+        <Field label="國別" hint="2 碼"><input value={f.country} maxLength={2} onChange={set('country')} placeholder="JP" /></Field>
+      </div>
+      <Field label="集合地點"><input value={f.meeting_point} onChange={set('meeting_point')} placeholder="例：仁王門前" /></Field>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={submit}><Icon name="device-floppy" />儲存地點</AsyncButton>
+    </Modal>
+  )
+}
 
-        <div className="section-title sm"><Icon name="gift" />紀念商品<span className="lbl-hint" style={{ marginLeft: 6 }}>從紀念商品資料庫挑選</span></div>
-        <div style={{ marginBottom: '0.7rem' }}>
-          {souvenirs.length ? souvenirs.map((s) => (
-            <div className="lrow" key={s.pid} style={{ marginBottom: '0.5rem' }}>
-              <div className="lmain"><div className="lname">{s.name}</div><div className="lsub">NT$ {fmt(s.price)}</div></div>
-              <div className="lacts"><button className="iconbtn-sm del" onClick={() => setSouvenirs(souvenirs.filter((x) => x.pid !== s.pid))}><Icon name="x" /></button></div>
+/* 地點販售的商品：從各店家的商品挑選；售價 / 分潤比例留空 = 沿用商品設定 */
+type Override = { price: string; sharePct: string }
+
+function ItemProductsModal({ item, shops, onClose }: { item: ItineraryItem; shops: Shop[]; onClose: () => void }) {
+  const products = usePickableProducts()
+  const { setProducts } = useItineraryItemActions()
+  const [q, setQ] = useState('')
+  const [chosen, setChosen] = useState<Map<number, Override>>(() => new Map(item.products.map((p) => [p.product_id, {
+    price: p.price_override ? String(Number(p.price_override)) : '',
+    sharePct: p.commission_share_override ? String(+(Number(p.commission_share_override) * 100).toFixed(2)) : '',
+  }])))
+
+  const toggle = (id: number) => setChosen((m) => { const n = new Map(m); if (n.has(id)) n.delete(id); else n.set(id, { price: '', sharePct: '' }); return n })
+  const edit = (id: number, k: keyof Override, v: string) => setChosen((m) => new Map(m).set(id, { ...m.get(id)!, [k]: v }))
+
+  async function submit() {
+    const rows: ItineraryItemProductWrite[] = []
+    for (const [product_id, o] of chosen) {
+      const share = o.sharePct === '' ? null : Number(o.sharePct) / 100
+      if (o.price !== '' && !(Number(o.price) >= 0)) return toast('售價須為 0 以上的數字', 'alert-circle')
+      if (share != null && !(share >= 0 && share <= 1)) return toast('分潤比例須介於 0–100%', 'alert-circle')
+      rows.push({ product_id, price_override: o.price === '' ? null : Number(o.price), commission_share_override: share })
+    }
+    await setProducts.mutateAsync({ id: item.id, products: rows })
+    toast(`已串聯 ${rows.length} 項商品`, 'gift')
+    onClose()
+  }
+
+  return (
+    <Modal onClose={onClose} title="挑選紀念商品" sub={item.name}>
+      <p className="hint" style={{ marginBottom: '0.6rem' }}>勾選要在此地點販售的商品；售價、分潤比例留空則沿用商品設定。</p>
+      <QueryState queries={[products]}>{() => {
+        const list = products.data!.filter((p) => includesQ([p.sku, p.name, p.category, shopName(shops, p.shop_id)], q))
+        return products.data!.length ? (
+          <>
+            <SearchBox value={q} onChange={setQ} placeholder="搜尋：商品名稱 / SKU / 分類 / 店家" />
+            <div style={{ maxHeight: 380, overflowY: 'auto', margin: '0.6rem 0 0.9rem' }}>
+              {list.map((p) => {
+                const o = chosen.get(p.id)
+                return (
+                  <div className={`lrow pick-row ${o ? 'on' : ''}`} key={p.id} style={{ flexWrap: 'wrap' }} onClick={() => toggle(p.id)}>
+                    <div className="pick-box">{o && <Icon name="check" />}</div>
+                    <div className="lmain">
+                      <div className="lname">{p.name}{!p.is_on_sale && <span className="st-badge off" style={{ marginLeft: 6 }}>下架</span>}</div>
+                      <div className="lsub">{shopName(shops, p.shop_id)} · {p.sku} · {money(p.price, p.currency)} · 分潤 {ratePct(p.default_commission_share)}</div>
+                    </div>
+                    {/* 另訂售價 / 分潤：點輸入框不切換勾選 */}
+                    {o && (
+                      <div className="row-2" style={{ width: '100%' }} onClick={(e) => e.stopPropagation()}>
+                        <input type="number" min={0} value={o.price} onChange={(e) => edit(p.id, 'price', e.target.value)} placeholder={`售價 ${p.currency}（預設 ${Number(p.price)}）`} />
+                        <input type="number" min={0} max={100} value={o.sharePct} onChange={(e) => edit(p.id, 'sharePct', e.target.value)} placeholder={`分潤 %（預設 ${ratePct(p.default_commission_share)}）`} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {!list.length && <p className="hint">查無符合的商品</p>}
             </div>
-          )) : <p className="hint">尚未串聯紀念商品</p>}
-        </div>
-        <button className="btn btn-ghost btn-block btn-sm" style={{ marginBottom: '0.9rem' }} onClick={() => setPicking(true)}>
-          <Icon name="search" />挑選 / 新增紀念商品
-        </button>
-
-        {c && <div style={{ marginBottom: '0.9rem' }}><MapEmbed lat={c.lat} lng={c.lng} /></div>}
-        <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={save}><Icon name="device-floppy" />儲存地點</AsyncButton>
-      </Modal>
-
-      {picking && (
-        <SouvPicker
-          title={name} initial={souvenirs.map((s) => s.pid)} onClose={() => setPicking(false)}
-          onApply={(chosen) => { setSouvenirs(chosen); setPicking(false) }}
-        />
-      )}
-    </>
+          </>
+        ) : <Empty icon="package" text="尚無商品" hint="請先於支援店家新增商品" />
+      }}</QueryState>
+      <AsyncButton className="btn btn-primary btn-block btn-lg" onClick={submit}><Icon name="device-floppy" />儲存（{chosen.size} 項）</AsyncButton>
+    </Modal>
   )
 }
 
 export default function Places() {
-  const { queries, data } = useAdminData('places', 'products')
-  return <QueryState queries={queries}>{() => <PlacesView data={data!} />}</QueryState>
+  const items = useItineraryItems()
+  const shops = useAdminData('shops')
+  return <QueryState queries={[items, ...shops.queries]}>{() => <PlacesView items={items.data!} shops={shops.data!.shops} />}</QueryState>
 }
 
-function PlacesView({ data }: { data: Pick<AdminData, 'places' | 'products'> }) {
-  const { update, remove } = useCrud()
-  const qc = useQueryClient()
-  const [editing, setEditing] = useState<Place | 'new' | null>(null)
-  const [souvOf, setSouvOf] = useState<Place | null>(null)
+function PlacesView({ items, shops }: { items: ItineraryItem[]; shops: Shop[] }) {
+  const { duplicate, remove } = useItineraryItemActions()
+  const [q, setQ] = useState('')
+  const [editing, setEditing] = useState<ItineraryItem | 'new' | null>(null)
+  const [productsOf, setProductsOf] = useState<ItineraryItem | null>(null)
+  const list = items.filter((it) => includesQ([it.name, it.address, it.city, it.country, it.meeting_point, ...it.products.map((p) => p.product_name)], q))
 
-  /* 刪除成功後，後端已自行程移除此地點，畫面同步 */
-  function del(p: Place) {
+  async function copy(it: ItineraryItem) {
+    const saved = await duplicate.mutateAsync(it.id)
+    toast(`已複製為「${saved.name}」`, 'copy')
+  }
+
+  function del(it: ItineraryItem) {
     return confirmDialog({
-      title: '刪除旅遊地點？', message: `「${p.name}」將被刪除，並自所有行程移除（相關紀念商品一併移除）。`, confirmLabel: '刪除', danger: true,
-      onConfirm: async () => {
-        if (!(await remove('places', p.id, '已刪除地點'))) return
-        /* 後端已自各行程移除此地點 → 重新讀取行程 */
-        void qc.invalidateQueries({ queryKey: adminKeys.list('tours') })
-      },
+      title: '刪除旅遊地點？', message: `「${it.name}」將被刪除（串聯的商品一併移除）。`, confirmLabel: '刪除', danger: true,
+      onConfirm: async () => { await remove.mutateAsync(it.id); toast('已刪除地點', 'trash') },
     })
   }
 
@@ -89,28 +137,29 @@ function PlacesView({ data }: { data: Pick<AdminData, 'places' | 'products'> }) 
       <PageHead icon="map-pin" title="旅遊地點">
         <button className="btn btn-primary" onClick={() => setEditing('new')}><Icon name="map-pin-plus" />新增旅遊地點</button>
       </PageHead>
+      <div className="toolbar"><SearchBox value={q} onChange={setQ} placeholder="搜尋：地點名稱 / 地址 / 城市 / 商品" /></div>
+      <DataNote group="admin.itineraryItems" />
 
-      {data.places.length ? data.places.map((p) => (
-        <div className="crud-card" key={p.id}>
-          <div className="crud-top"><span className="crud-badge"><Icon name="map-pin" /></span><div className="crud-title">{p.name}</div></div>
-          <div className="crud-body">{p.desc || '—'}</div>
-          <div className="crud-meta"><Icon name="world-latitude" />{p.lat}, {p.lng} · 紀念商品 {p.souvenirs.length} 項</div>
-          <MapEmbed lat={p.lat} lng={p.lng} h={150} />
+      {list.length ? list.map((it) => (
+        <div className="crud-card" key={it.id}>
+          <div className="crud-top"><span className="crud-badge"><Icon name="map-pin" /></span><div className="crud-title">{it.name}</div></div>
+          <div className="crud-meta"><Icon name="map-search" />{place(it) || '未填地址'}</div>
+          {it.meeting_point && <div className="crud-meta"><Icon name="users-group" />集合：{it.meeting_point}</div>}
+          <div className="crud-meta">
+            <Icon name="gift" />{it.products.length ? it.products.map((p) => `${p.product_name}（${money(p.price, p.currency)}）`).join('、') : '尚未串聯商品'}
+          </div>
           <div className="crud-acts">
-            <button className="oact" onClick={() => setSouvOf(p)}><Icon name="gift" />紀念商品</button>
-            <button className="oact" onClick={() => setEditing(p)}><Icon name="edit" />修改</button>
-            <button className="oact del" onClick={() => del(p)}><Icon name="trash" />刪除</button>
+            <button className="oact" onClick={() => setProductsOf(it)}><Icon name="gift" />商品</button>
+            <a className="oact" href={mapUrl(it)} target="_blank" rel="noreferrer"><Icon name="external-link" />地圖</a>
+            <button className="oact" onClick={() => setEditing(it)}><Icon name="edit" />修改</button>
+            <AsyncButton className="oact" onClick={() => copy(it)}><Icon name="copy" />複製</AsyncButton>
+            <button className="oact del" onClick={() => del(it)}><Icon name="trash" />刪除</button>
           </div>
         </div>
-      )) : <Empty text="尚無旅遊地點" />}
+      )) : <Empty text={items.length ? '查無符合的地點' : '尚無旅遊地點'} />}
 
-      {editing && <PlaceModal key={editing === 'new' ? 'new' : editing.id} place={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
-      {souvOf && (
-        <SouvPicker
-          title={souvOf.name} initial={souvOf.souvenirs.map((s) => s.pid)} onClose={() => setSouvOf(null)}
-          onApply={async (chosen) => { if (await update('places', souvOf.id, { souvenirs: chosen }, `已串聯 ${chosen.length} 項紀念商品`, 'gift')) setSouvOf(null) }}
-        />
-      )}
+      {editing && <ItemModal key={editing === 'new' ? 'new' : editing.id} item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {productsOf && <ItemProductsModal item={productsOf} shops={shops} onClose={() => setProductsOf(null)} />}
     </div>
   )
 }

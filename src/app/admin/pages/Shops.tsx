@@ -38,11 +38,12 @@ function ShopModal({ shop, onClose }: { shop: Shop | null; onClose: () => void }
     const pct = Number(f.ratePct)
     if (f.ratePct.trim() === '' || !(pct >= 0 && pct <= 100)) return toast('抽成比例請輸入 0–100 的數字', 'alert-circle')
     if (f.email.trim() && !/^\S+@\S+\.\S+$/.test(f.email.trim())) return toast('請輸入有效的 Email', 'alert-circle')
+    if (f.country.trim() && !/^[A-Za-z]{2}$/.test(f.country.trim())) return toast('國家請填 2 碼（例：JP、TW、KR）', 'alert-circle')
     /* 選填欄位留空 = null（後端清除） */
     const opt = (v: string) => v.trim() || null
     const fields = {
       name: f.name.trim(), contact_name: opt(f.contact_name), phone: opt(f.phone), email: opt(f.email),
-      country: opt(f.country), city: opt(f.city), address: opt(f.address), agency_rate: pct / 100, settlement_cycle: settlement,
+      country: opt(f.country.toUpperCase()), city: opt(f.city), address: opt(f.address), agency_rate: pct / 100, settlement_cycle: settlement,
     }
     const saved = shop
       ? await update('shops', shop.id, { ...fields, is_active: active }, '支援店家已儲存')
@@ -60,7 +61,7 @@ function ShopModal({ shop, onClose }: { shop: Shop | null; onClose: () => void }
       </div>
       <Field label="Email"><input type="email" value={f.email} onChange={set('email')} placeholder="選填" /></Field>
       <div className="row-2">
-        <Field label="國家"><input value={f.country} onChange={set('country')} placeholder="日本" /></Field>
+        <Field label="國家" hint="2 碼"><input value={f.country} maxLength={2} onChange={set('country')} placeholder="JP" /></Field>
         <Field label="城市"><input value={f.city} onChange={set('city')} placeholder="京都" /></Field>
       </div>
       <Field label="地址"><input value={f.address} onChange={set('address')} placeholder="東山區清水 2-1" /></Field>
