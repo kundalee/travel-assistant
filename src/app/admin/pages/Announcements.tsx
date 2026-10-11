@@ -35,9 +35,9 @@ function AnnModal({ ann, onClose }: { ann: Announcement | null; onClose: () => v
   const [from, setFrom] = useState(toInputDate(ann?.pubFrom))
   const [to, setTo] = useState(toInputDate(ann?.pubTo))
   const [target, setTarget] = useState<AnnTarget>(ann?.target || '依團名')
-  const [targetVal, setTargetVal] = useState(ann?.targetVal || data.tours[0]?.title || '')
+  const [targetVal, setTargetVal] = useState(ann?.targetVal || data.tours[0]?.name || '')
   const isKw = target === '依關鍵字'
-  const tourTitles = [...new Set(data.tours.map((t) => t.title))]
+  const tourTitles = [...new Set(data.tours.map((t) => t.name))]
 
   function changeCat(c: AnnCat) { setCat(c); setType(ANN_TYPES[c][0]) }
   function changeTarget(t: AnnTarget) {

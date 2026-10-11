@@ -431,7 +431,8 @@ textarea { resize: vertical; min-height: 90px; }
 .rbadge.off { background:var(--danger-l); color:var(--danger); }
 .rbadge.upcoming { background:var(--info-l); color:var(--info); }
 .rbadge.ongoing { background:var(--accent-light); color:var(--accent); }
-.rbadge.completed { background:var(--surface2); color:var(--muted); border:1px solid var(--border2); }
+.rbadge.completed, .rbadge.closed { background:var(--surface2); color:var(--muted); border:1px solid var(--border2); }
+.rbadge.cancelled { background:var(--danger-l); color:var(--danger); }
 .iconbtn-sm { width:34px; height:34px; border-radius:9px; border:1px solid var(--border2); background:var(--surface); color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:16px; transition:var(--t); }
 .iconbtn-sm:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-light); }
 .iconbtn-sm.del:hover { border-color:var(--danger); color:var(--danger); background:var(--danger-l); }

@@ -1,7 +1,8 @@
 import type { Role, UserRead } from '../auth'
 
 export type { Role }
-export type TourStatus = 'preparing' | 'upcoming' | 'ongoing' | 'completed'
+/** 行程狀態：準備中 / 即將出發 / 進行中 / 已結束 / 已取消（取消只能由人設定） */
+export type TourStatus = 'preparing' | 'upcoming' | 'ongoing' | 'closed' | 'cancelled'
 export type ProductKind = 'souvenir' | 'deal' | 'boutique'
 export type { OrderStatus } from '../../lib/orders'
 import type { OrderStatus } from '../../lib/orders'
@@ -28,25 +29,133 @@ export interface UserUpdate {
   roles?: Role[]
 }
 
+/** 行程的領隊（is_lead = 主要領隊） */
+export interface TourGuide {
+  guide_id: number
+  full_name: string
+  is_lead: boolean
+}
+
+/** 指派領隊（PUT /tours/:id/guides 的一項） */
+export interface GuideAssignment {
+  guide_id: number
+  is_lead?: boolean
+}
+
+/** 行程（與後端 TourRead 相同；GET /tours） */
 export interface Tour {
-  id: string
-  title: string
-  dest?: string
-  country?: string
-  dates_text?: string
-  start_date?: string
-  end_date?: string
-  batch_seq?: number
+  id: number
+  /** 團號，不可重複 */
+  code: string
+  name: string
+  description: string | null
+  destination: string
+  /** YYYY-MM-DD */
+  start_date: string
+  end_date: string
   status: TourStatus
-  img_url?: string
-  guide_id: string | null
-  guide_name?: string
-  /** 團員人數（由後端依名冊計算） */
-  member_count?: number
-  places?: string[]
-  published?: boolean
-  source?: string
-  synced_at?: string
+  /** true = 狀態依日期自動更新 */
+  auto_status: boolean
+  status_changed_at: string
+  notes: string | null
+  min_size: number
+  max_size: number
+  /** 每人團費（小數字串） */
+  price_per_person: string
+  /** 3 碼大寫，例：JPY */
+  currency: string
+  /** 所屬旅行社（agent 帳號） */
+  owner_agent_id: number
+  guides: TourGuide[]
+  created_at: string
+}
+
+/** 新增行程（POST /tours）；管理員建立時 owner_agent_id 必填 */
+export interface TourCreate {
+  code: string
+  name: string
+  description?: string | null
+  destination: string
+  start_date: string
+  end_date: string
+  min_size: number
+  max_size: number
+  price_per_person: number
+  currency: string
+  auto_status?: boolean
+  owner_agent_id?: number | null
+}
+
+/** 修改行程（PATCH /tours/:id）：未帶的欄位不變 */
+export type TourUpdate = Partial<TourCreate> & { notes?: string | null }
+
+/** 行程清單的篩選與分頁（GET /tours 的查詢字串） */
+export interface TourFilters {
+  status?: TourStatus
+  date_from?: string
+  date_to?: string
+  guide_id?: number
+  agent_id?: number
+  /** 團號 / 名稱 / 目的地 */
+  q?: string
+  /** 1–500，預設 100 */
+  limit?: number
+  offset?: number
+  [key: string]: string | number | boolean | undefined
+}
+
+/** 行程的一個行程表項目（與後端 TourItineraryRead 相同；GET /tours/:tourId/tour-itineraries，依日期、順序排列） */
+export interface TourItinerary {
+  id: number
+  tour_id: number
+  /** 對應的旅遊地點（/admin/places） */
+  itinerary_item_id: number
+  name: string
+  address: string | null
+  city: string | null
+  country: string | null
+  meeting_point: string | null
+  /** YYYY-MM-DD，須在行程期間內 */
+  visit_date: string
+  /** HH:MM:SS */
+  start_time: string | null
+  end_time: string | null
+  /** 當天的順序（從 1 開始；同一天不可重複，可不連續） */
+  sequence: number
+  notes: string | null
+  products: ItineraryItemProduct[]
+}
+
+/** 新增行程表項目（POST /tours/:tourId/tour-itineraries）：itinerary_item_id 或 itinerary_item（同時新增地點）擇一；sequence 未帶 = 當天最後 */
+export interface TourItineraryCreate {
+  itinerary_item_id?: number | null
+  itinerary_item?: ItineraryItemCreate | null
+  visit_date: string
+  start_time?: string | null
+  end_time?: string | null
+  sequence?: number | null
+  notes?: string | null
+}
+
+/** 修改行程表項目（PATCH /tour-itineraries/:id）：未帶的欄位不變、null 清除 */
+export type TourItineraryUpdate = Partial<Omit<TourItineraryCreate, 'itinerary_item'>>
+
+export type PaymentStatus = 'unpaid' | 'deposit' | 'paid' | 'refunded'
+
+/** 行程的報名（與後端 BookingRead 相同；GET /tours/:tourId/bookings） */
+export interface TourBooking {
+  id: number
+  tour_id: number
+  tour_code: string
+  member_id: number
+  member_name: string
+  payment_status: PaymentStatus
+  amount_due: string
+  amount_paid: string
+  currency: string
+  booked_at: string
+  cancelled_at: string | null
+  notes: string | null
 }
 
 export interface Order {
@@ -329,21 +438,6 @@ export interface AdminCollections {
   shops: Shop[]
   monthly: MonthlySales[]
   trackingGroups: TrackingGroup[]
-}
-
-export interface RosterMember {
-  name: string
-  email: string
-  phone: string
-  nick?: string
-}
-
-/** 登入帳號預設值：ID = email、PW = 電話（無電話則由系統產生） */
-export interface RosterEntry extends RosterMember {
-  code: string
-  loginId: string
-  loginPw: string
-  pwSource: '電話' | '系統自訂'
 }
 
 export interface RankRow { n: string; v: number }

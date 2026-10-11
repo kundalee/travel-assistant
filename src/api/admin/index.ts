@@ -7,6 +7,7 @@ import type { AdminCollections } from '../types/admin'
 /* 匯入順序即 API 面板與 docs/ENDPOINTS.md 的群組順序 */
 import { usersApi } from './users'
 import { toursApi } from './tours'
+import { tourItinerariesApi } from './tourItineraries'
 import { ordersApi } from './orders'
 import { bookingsApi } from './bookings'
 import { reviewsApi } from './reviews'
@@ -23,7 +24,7 @@ import { reportsApi } from './reports'
 import { aiApi } from './ai'
 
 export {
-  usersApi, toursApi, ordersApi, bookingsApi, reviewsApi, announcementsApi, campaignsApi, productsApi, placesApi, itineraryItemsApi, shopsApi, shopProductsApi,
+  usersApi, toursApi, tourItinerariesApi, ordersApi, bookingsApi, reviewsApi, announcementsApi, campaignsApi, productsApi, placesApi, itineraryItemsApi, shopsApi, shopProductsApi,
   salesApi, trackingApi, reportsApi, aiApi,
 }
 

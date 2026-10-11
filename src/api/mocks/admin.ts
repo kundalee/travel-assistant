@@ -1,5 +1,5 @@
 /* ═══════ 常數與範例資料（未連線 / 展示模式使用）═══════ */
-import type { AdminCollections, AnnCat, ProductKind, Receivable, Role, RosterMember, SettlementCycle, Stats, TourStatus, Vital, Zone } from '../types/admin'
+import type { AdminCollections, AnnCat, Tour, ProductKind, Receivable, Role, SettlementCycle, Stats, TourStatus, Vital, Zone } from '../types/admin'
 
 export const DEMO = { email: 'admin@example.com', pw: 'admin1234' }
 
@@ -18,7 +18,7 @@ export const IMG = {
 export const PAYLABEL: Record<string, string> = { card: '信用卡', linepay: 'LINE Pay', mobilepay: '行動支付', cvs: '超商代碼', atm: 'ATM 轉帳', guide: '現場付款' }
 export const ROLE_TW: Record<Role, string> = { member: '團員', guide: '領隊導遊', agent: '支援店家', admin: '管理員' }
 export { STATUS_ALL } from '../../lib/orders'
-export const TOUR_STATUS_TW: Record<TourStatus, string> = { preparing: '準備中', upcoming: '即將出發', ongoing: '進行中', completed: '已完成' }
+export const TOUR_STATUS_TW: Record<TourStatus, string> = { preparing: '準備中', upcoming: '即將出發', ongoing: '進行中', closed: '已結束', cancelled: '已取消' }
 export const HISTORY_AFTER_DAYS = 3 /* 結束日 +3 天後歸入歷史行程 */
 
 export const CATS = ['生活用品', '養生素食', '農產蔬果', '海鮮水產', '奶蛋肉品', '其它優選商品']
@@ -33,6 +33,14 @@ export const SETTLEMENT_TW: Record<SettlementCycle, string> = { per_tour: '每�
 
 export const ANN_TYPES: Record<AnnCat, string[]> = { 每日公告: ['晨喚', '集合時間與地點', '行程概述'], 一般公告: ['注意事項', '旅行社公告'] }
 
+function tour(id: number, code: string, name: string, destination: string, start_date: string, end_date: string, status: TourStatus, price: number, withGuide: boolean, currency = 'JPY'): Tour {
+  return {
+    id, code, name, description: null, destination, start_date, end_date, status, auto_status: true, status_changed_at: '2026-06-20T09:00:00Z', notes: null,
+    min_size: 10, max_size: 30, price_per_person: price.toFixed(2), currency, owner_agent_id: 4,
+    guides: withGuide ? [{ guide_id: 2, full_name: '王大明', is_lead: true }] : [], created_at: '2026-06-01T09:00:00Z',
+  }
+}
+
 export const SAMPLE: AdminCollections = {
   /* 帳號：與後端 UserRead 相同格式 */
   users: [
@@ -44,13 +52,14 @@ export const SAMPLE: AdminCollections = {
     { id: 6, full_name: '黃雅婷', email: 'trav3@a.com', roles: ['member'], phone: '0966-888-999', is_active: false, last_login_at: null, created_at: '2026-01-05T09:00:00Z' },
   ],
   /* 行程來源：旅行社 CRM / 行程建立系統 API 同步（本系統不自行產生行程） */
+  /* 行程：與後端 TourRead 相同格式（所屬旅行社 = 帳號 4、領隊 = 帳號 2） */
   tours: [
-    { id: 't1', title: '京都文化深度六日', dest: '京都, 日本', dates_text: '2026/06/30 - 07/05', start_date: '2026-06-30', end_date: '2026-07-05', batch_seq: 1, status: 'ongoing', img_url: IMG.kyoto, guide_id: '2', guide_name: '王大明', places: ['pl1', 'pl2', 'pl3'], published: true, source: 'CRM', synced_at: '2026-06-20 09:12' },
-    { id: 't2', title: '日本東京五日遊', dest: '東京, 日本', dates_text: '2026/07/15 - 07/19', start_date: '2026-07-15', end_date: '2026-07-19', batch_seq: 1, status: 'upcoming', img_url: IMG.tokyo, guide_id: '2', guide_name: '王大明', places: ['pl4'], published: true, source: 'CRM', synced_at: '2026-07-01 08:30' },
-    { id: 't3', title: '花蓮太魯閣三日遊', dest: '花蓮, 台灣', dates_text: '2026/05/05 - 05/07', start_date: '2026-05-05', end_date: '2026-05-07', batch_seq: 1, status: 'completed', img_url: IMG.hualien, guide_id: '2', guide_name: '王大明', published: true, source: 'CRM', synced_at: '2026-04-20 10:00' },
-    { id: 't4', title: '泰國曼谷四日遊', dest: '曼谷, 泰國', dates_text: '2026/08/20 - 08/23', start_date: '2026-08-20', end_date: '2026-08-23', batch_seq: 1, status: 'preparing', img_url: IMG.bangkok, guide_id: null, guide_name: '', published: false, source: 'CRM', synced_at: '2026-07-16 14:05' },
-    { id: 't5', title: '北海道賞雪五日', dest: '北海道, 日本', dates_text: '2026/02/10 - 02/14', start_date: '2026-02-10', end_date: '2026-02-14', batch_seq: 1, status: 'completed', img_url: IMG.kyoto, guide_id: '2', guide_name: '王大明', published: true, source: 'CRM', synced_at: '2026-01-25 11:20' },
-    { id: 't6', title: '泰國曼谷四日遊', dest: '曼谷, 泰國', dates_text: '2026/08/20 - 08/23', start_date: '2026-08-20', end_date: '2026-08-23', batch_seq: 2, status: 'preparing', img_url: IMG.bangkok, guide_id: null, guide_name: '', published: false, source: 'CRM', synced_at: '2026-07-16 14:05' },
+    tour(1, 'KYO-260630-1', '京都文化深度六日', '京都, 日本', '2026-06-30', '2026-07-05', 'ongoing', 68000, true),
+    tour(2, 'TYO-260715-1', '日本東京五日遊', '東京, 日本', '2026-07-15', '2026-07-19', 'upcoming', 52000, true),
+    tour(3, 'HUN-260505-1', '花蓮太魯閣三日遊', '花蓮, 台灣', '2026-05-05', '2026-05-07', 'closed', 12800, true, 'TWD'),
+    tour(4, 'BKK-260820-1', '泰國曼谷四日遊', '曼谷, 泰國', '2026-08-20', '2026-08-23', 'preparing', 26800, false),
+    tour(5, 'CTS-260210-1', '北海道賞雪五日', '北海道, 日本', '2026-02-10', '2026-02-14', 'closed', 59000, true),
+    tour(6, 'BKK-260820-2', '泰國曼谷四日遊', '曼谷, 泰國', '2026-08-20', '2026-08-23', 'preparing', 26800, false),
   ],
   orders: [
     { id: 'o1', buyer_name: '林小美', product_name: '八橋餅禮盒', qty: 2, amount: 960, status: '已付款', method: 'card', payflow: 'epay', fulfillment: 'ship', logistics: '黑貓', kind: 'souvenir', cat: '其它優選商品', reconciled: false, created_at: '2026-07-02' },
@@ -148,17 +157,9 @@ export const RECEIVABLE: Receivable[] = [
   { party: '黑貓宅急便', type: '應付', amount: 12400, due: '2026/07/25', done: false },
 ]
 
-/* 團員名冊（由 CRM 同步取得；帳密預設 ID=email / PW=電話）*/
-export const ROSTER_SEED: Record<string, RosterMember[]> = {
-  t1: [
-    { name: '林小美', email: 'may.lin@example.com', phone: '0922-111-222', nick: '小美' },
-    { name: '陳志豪', email: 'howie.chen@example.com', phone: '0955-666-777', nick: '阿豪' },
-    { name: '黃雅婷', email: 'yating.h@example.com', phone: '0966-888-999', nick: '婷婷' },
-    { name: '張家維', email: 'chiawei.chang@example.com', phone: '', nick: '家維' },
-  ],
-  t2: [
-    { name: '鄭凱文', email: 'kevin.cheng@example.com', phone: '0911-222-333', nick: '凱文' },
-    { name: '許美玲', email: 'meiling.hsu@example.com', phone: '0933-555-777', nick: '美玲' },
-  ],
-  t4: [{ name: '周欣怡', email: 'joy.chou@example.com', phone: '0977-123-456', nick: '欣怡' }],
+/* 行程的報名團員（依行程 id；付款狀態依序輪替） */
+export const BOOKING_SEED: Record<number, string[]> = {
+  1: ['林小美', '陳志豪', '黃雅婷', '張家維'],
+  2: ['鄭凱文', '許美玲'],
+  4: ['周欣怡'],
 }

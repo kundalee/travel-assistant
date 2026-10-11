@@ -1,17 +1,17 @@
 /* 假後端：後台管理 */
 import { clone } from '../../lib/utils'
-import { IMG, RECEIVABLE, ROSTER_SEED, SAMPLE, STATS, VITALS, ZONES } from '../mocks/admin'
+import { BOOKING_SEED, RECEIVABLE, SAMPLE, STATS, VITALS, ZONES } from '../mocks/admin'
 import type {
-  AdminCollections, ImportJob, ItineraryItem, ItineraryItemCreate, ItineraryItemProductWrite, ItineraryItemUpdate, RosterEntry, Shop, ShopCreate, ShopProduct, ShopProductCreate, ShopProductUpdate, ShopUpdate, Tour, User, UserCreate, UserUpdate,
+  AdminCollections, ImportJob, ItineraryItem, ItineraryItemCreate, ItineraryItemProductWrite, ItineraryItemUpdate, PaymentStatus, Shop, ShopCreate, ShopProduct, ShopProductCreate, ShopProductUpdate, ShopUpdate, Tour, TourBooking, TourCreate, TourItinerary, TourItineraryCreate, TourItineraryUpdate, TourStatus, TourUpdate, User, UserCreate, UserUpdate,
 } from '../types/admin'
 import type { Endpoint } from '../endpoints'
 import {
-  aiApi, announcementsApi, bookingsApi, campaignsApi, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi,
+  aiApi, announcementsApi, bookingsApi, campaignsApi, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi, tourItinerariesApi,
   trackingApi, usersApi, shopsApi, shopProductsApi, itineraryItemsApi,
 } from '../admin'
 import { FakeError, files, json, persisted, requireUser, route, type Ctx } from './server'
 
-const store = persisted('fake_admin_db_v3', () => clone(SAMPLE))
+const store = persisted('fake_admin_db_v4', () => clone(SAMPLE))
 const db = () => store.get()
 
 type Key = keyof AdminCollections
@@ -21,6 +21,8 @@ type Row = { id: string }
 const handler = (fn: (ctx: Ctx) => unknown, save = false) => (ctx: Ctx) => {
   requireUser(ctx)
   const out = fn(ctx)
+  /* 非同步（例如匯入檔案）：完成後才保存 */
+  if (save && out instanceof Promise) return out.then((v) => { store.save(); return v })
   if (save) store.save()
   return out
 }
@@ -31,20 +33,6 @@ const find = (key: Key, id: string) => {
   if (!row) throw new FakeError(404, '找不到此筆資料。')
   return row
 }
-
-/* ── 團員名冊：帳號預設 email、密碼預設電話（無電話則由系統產生） ── */
-const batch = (t: Tour) => `${t.title}_${(t.start_date || '').replace(/-/g, '')}-${t.batch_seq || 1}團`
-function hashStr(x: string) { let h = 0; for (let i = 0; i < x.length; i++) { h = ((h << 5) - h) + x.charCodeAt(i); h |= 0 } return h }
-function roster(t: Tour): RosterEntry[] {
-  return (ROSTER_SEED[t.id] || []).map((m, i) => ({
-    ...m,
-    code: `${batch(t)}_${String(i + 1).padStart(3, '0')}`,
-    loginId: m.email,
-    loginPw: m.phone || 'TA' + String(Math.abs(hashStr(m.email))).slice(0, 6),
-    pwSource: m.phone ? '電話' : '系統自訂',
-  }))
-}
-const withCount = (t: Tour): Tour => ({ ...t, member_count: (ROSTER_SEED[t.id] || []).length })
 
 /* ── 清單 CRUD：依資源檔宣告的操作（list / create / update / remove）實作 ── */
 type Api = { endpoint: Endpoint }
@@ -71,8 +59,6 @@ function collection(key: Key, api: CollectionApi, prefix: string, map = (r: Row)
     route(api.remove, handler((ctx) => {
       find(key, ctx.params.id)
       ;(db()[key] as unknown as Row[]) = list(key).filter((x) => x.id !== ctx.params.id)
-      /* 刪除地點時一併自行程移除 */
-      if (key === 'places') db().tours.forEach((t) => { if (t.places) t.places = t.places.filter((p) => p !== ctx.params.id) })
     }, true))
   }
 }
@@ -98,7 +84,6 @@ route(usersApi.update, handler((ctx) => {
   Object.entries(changes).forEach(([k, v]) => { if (v !== undefined) (user as unknown as Record<string, unknown>)[k] = v })
   return user
 }, true))
-collection('tours', toursApi, 't', (r) => withCount(r as Tour), (r) => { (r as Tour).img_url ||= IMG.kyoto })
 collection('orders', ordersApi, 'o')
 collection('bookings', bookingsApi, 'b')
 collection('reviews', reviewsApi, 'r')
@@ -370,6 +355,7 @@ route(itineraryItemsApi.update, itemHandler((ctx) => {
 }, true))
 route(itineraryItemsApi.remove, itemHandler((ctx) => {
   const item = itemOf(ctx.params.id)
+  if (tdb().rows.some((r) => r.itinerary_item_id === item.id)) throw new FakeError(409, 'A tour itinerary uses this itinerary item; remove it from those tours first')
   idb().items = idb().items.filter((s) => s !== item)
 }, true))
 route(itineraryItemsApi.duplicate, itemHandler((ctx) => {
@@ -401,12 +387,300 @@ route(itineraryItemsApi.setProducts, itemHandler((ctx) => {
   return item
 }, true))
 
-/* ── 行程：名冊 / CRM 同步 ── */
-route(toursApi.members, handler((ctx) => roster(find('tours', ctx.params.id) as Tour)))
-route(toursApi.syncCrm, handler(() => ({
-  syncedAt: new Date().toLocaleString('zh-TW', { hour12: false }),
-  tours: db().tours.map(withCount),
-})))
+/* ── 行程：與真正後端相同（數字 id；團號不可重複；管理員建立時需指定所屬旅行社；只有準備中可刪除；
+      領隊須為啟用中的領隊帳號；複製時連同行程表，日期依新出發日平移、不含領隊；匯入 CSV 全部正確才寫入） ── */
+const TOUR_COLUMNS = ['code', 'name', 'description', 'destination', 'start_date', 'end_date', 'min_size', 'max_size', 'price_per_person', 'currency', 'auto_status', 'owner_agent_email']
+const tourOf = (id: string | number) => {
+  const tour = db().tours.find((t) => String(t.id) === String(id))
+  if (!tour) throw new FakeError(404, 'Tour not found')
+  return tour
+}
+const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+const addDays = (date: string, n: number) => new Date(Date.parse(date) + n * 86400000).toISOString().slice(0, 10)
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000)
+/* 驗證新增 / 修改後的整筆行程；回傳錯誤清單（field + message） */
+function checkTour(t: Partial<TourCreate>, self?: Tour) {
+  const errors: { field: string; message: string }[] = []
+  for (const k of ['code', 'name', 'destination'] as const) if (!String(t[k] ?? '').trim()) errors.push({ field: k, message: 'Field required' })
+  for (const k of ['start_date', 'end_date'] as const) if (!isDate(t[k])) errors.push({ field: k, message: 'Input should be a valid date' })
+  if (isDate(t.start_date) && isDate(t.end_date) && t.end_date! < t.start_date!) errors.push({ field: 'end_date', message: 'Value error, end_date must not be before start_date' })
+  for (const k of ['min_size', 'max_size'] as const) if (!(Number.isInteger(Number(t[k])) && Number(t[k]) >= 1)) errors.push({ field: k, message: 'Input should be greater than or equal to 1' })
+  if (Number(t.min_size) > Number(t.max_size)) errors.push({ field: 'min_size', message: 'Value error, min_size must not be greater than max_size' })
+  if (t.price_per_person == null || (t.price_per_person as unknown) === '' || !(Number(t.price_per_person) >= 0)) errors.push({ field: 'price_per_person', message: 'Input should be greater than or equal to 0' })
+  if (!/^[A-Z]{3}$/.test(t.currency ?? '')) errors.push({ field: 'currency', message: "String should match pattern '^[A-Z]{3}$'" })
+  const agent = db().users.find((u) => u.id === Number(t.owner_agent_id))
+  if (t.owner_agent_id == null) errors.push({ field: 'owner_agent_id', message: 'owner_agent_id is required' })
+  else if (!agent?.roles.includes('agent')) errors.push({ field: 'owner_agent_id', message: 'owner_agent_id must be an agent' })
+  if (t.code && db().tours.some((x) => x.code === t.code && x !== self)) errors.push({ field: 'code', message: 'A tour with that code already exists' })
+  return errors
+}
+const tourFail = (errors: { field: string; message: string }[]) => {
+  const dup = errors.find((e) => e.message.startsWith('A tour with that code'))
+  if (dup) throw new FakeError(409, dup.message)
+  failOn(errors)
+}
+const tourValues = (t: Partial<TourCreate>) => ({
+  ...t, ...(t.price_per_person != null && { price_per_person: Number(t.price_per_person).toFixed(2) }),
+  ...(t.min_size != null && { min_size: Number(t.min_size) }), ...(t.max_size != null && { max_size: Number(t.max_size) }),
+  ...(t.owner_agent_id != null && { owner_agent_id: Number(t.owner_agent_id) }),
+}) as Partial<Tour>
+const nextTourId = () => Math.max(0, ...db().tours.map((t) => t.id)) + 1
+function newTour(input: TourCreate): Tour {
+  const now = new Date().toISOString()
+  return {
+    ...(tourValues(input) as Tour), id: nextTourId(), description: input.description ?? null, notes: null, status: 'preparing',
+    auto_status: input.auto_status ?? true, status_changed_at: now, guides: [], created_at: now,
+  }
+}
+
+route(toursApi.list, handler((ctx) => {
+  const qp = ctx.query
+  const q = (qp.get('q') ?? '').toLowerCase()
+  const limit = Math.min(500, Math.max(1, Number(qp.get('limit') ?? 100)))
+  const offset = Math.max(0, Number(qp.get('offset') ?? 0))
+  return db().tours
+    .filter((t) => !q || [t.code, t.name, t.destination].some((x) => x.toLowerCase().includes(q)))
+    .filter((t) => !qp.get('status') || t.status === qp.get('status'))
+    .filter((t) => !qp.get('date_from') || t.end_date >= qp.get('date_from')!)
+    .filter((t) => !qp.get('date_to') || t.start_date <= qp.get('date_to')!)
+    .filter((t) => !qp.get('guide_id') || t.guides.some((g) => String(g.guide_id) === qp.get('guide_id')))
+    .filter((t) => !qp.get('agent_id') || String(t.owner_agent_id) === qp.get('agent_id'))
+    .sort((a, b) => b.start_date.localeCompare(a.start_date))
+    .slice(offset, offset + limit)
+}))
+route(toursApi.create, handler((ctx) => {
+  const input = json<TourCreate>(ctx)
+  tourFail(checkTour(input))
+  const tour = newTour(input)
+  db().tours.push(tour)
+  return tour
+}, true))
+route(toursApi.update, handler((ctx) => {
+  const tour = tourOf(ctx.params.id)
+  const changes = Object.fromEntries(Object.entries(json<TourUpdate>(ctx)).filter(([, v]) => v !== undefined)) as TourUpdate
+  tourFail(checkTour({ ...tour, ...changes } as unknown as TourCreate, tour))
+  Object.assign(tour, tourValues(changes))
+  return tour
+}, true))
+route(toursApi.remove, handler((ctx) => {
+  const tour = tourOf(ctx.params.id)
+  if (tour.status !== 'preparing') throw new FakeError(409, 'Only a Preparing tour can be deleted; cancel it instead')
+  db().tours = db().tours.filter((t) => t !== tour)
+  tdb().rows = tdb().rows.filter((r) => r.tour_id !== tour.id)
+  tstore.save()
+}, true))
+route(toursApi.setStatus, handler((ctx) => {
+  const tour = tourOf(ctx.params.id)
+  const { status } = json<{ status?: TourStatus }>(ctx)
+  if (!['preparing', 'upcoming', 'ongoing', 'closed', 'cancelled'].includes(status ?? '')) throw new FakeError(422, "body.status: Input should be 'preparing', 'upcoming', 'ongoing', 'closed' or 'cancelled'")
+  Object.assign(tour, { status, status_changed_at: new Date().toISOString() })
+  return tour
+}, true))
+route(toursApi.setGuides, handler((ctx) => {
+  const tour = tourOf(ctx.params.id)
+  const { guides = [] } = json<{ guides?: { guide_id: number; is_lead?: boolean }[] }>(ctx)
+  if (new Set(guides.map((g) => g.guide_id)).size !== guides.length) throw new FakeError(422, 'A guide is listed more than once')
+  const users = guides.map((g) => db().users.find((u) => u.id === Number(g.guide_id) && u.is_active && u.roles.includes('guide')))
+  const bad = guides.filter((_, i) => !users[i]).map((g) => g.guide_id)
+  if (bad.length) throw new FakeError(422, `Not active guides: ${bad.join(', ')}`)
+  tour.guides = guides.map((g, i) => ({ guide_id: users[i]!.id, full_name: users[i]!.full_name, is_lead: !!g.is_lead }))
+  return tour
+}, true))
+route(toursApi.duplicate, handler((ctx) => {
+  const src = tourOf(ctx.params.id)
+  const { code, start_date, name } = json<{ code?: string; start_date?: string; name?: string | null }>(ctx)
+  const shift = isDate(start_date) ? dayDiff(src.start_date, start_date!) : 0
+  const input = {
+    ...src, code: code ?? '', name: name?.trim() || `${src.name} (copy)`, start_date: start_date ?? '', end_date: isDate(start_date) ? addDays(src.end_date, shift) : '',
+    price_per_person: Number(src.price_per_person),
+  } as unknown as TourCreate
+  tourFail(checkTour(input))
+  const tour: Tour = { ...newTour(input), description: src.description, notes: src.notes, auto_status: src.auto_status }
+  db().tours.push(tour)
+  tdb().rows.filter((r) => r.tour_id === src.id).forEach((r) => tdb().rows.push({ ...clone(r), id: nextRowId(), tour_id: tour.id, visit_date: addDays(r.visit_date, shift) }))
+  tstore.save()
+  return tour
+}, true))
+route(toursApi.importTemplate, handler(() => ({ filename: 'tours-template.csv', content: TOUR_COLUMNS.join(',') + '\n', type: 'text/csv;charset=utf-8' })))
+route(toursApi.importFile, handler(async (ctx) => {
+  const file = files(ctx, 'file')[0]
+  if (!file) throw new FakeError(422, 'body.file: Field required')
+  const job: ImportJob = { id: ++pdb().jobs, status: 'failed', file_name: file.name, target_id: null, error_report: [], created_at: new Date().toISOString() }
+  pstore.save()
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    job.error_report = [{ row: 1, message: '假後端只支援 CSV 匯入（Excel 請連接真正後端）' }]
+    return job
+  }
+  const [header = [], ...rows] = parseCsv((await file.text()).replace(/^﻿/, ''))
+  const cols = header.map((h) => h.trim())
+  const parsed = rows.map((cells, i) => {
+    const r = Object.fromEntries(cols.map((c, j) => [c, cells[j]?.trim() ?? '']))
+    const agent = db().users.find((u) => u.email.toLowerCase() === r.owner_agent_email?.toLowerCase())
+    const input: TourCreate = {
+      code: r.code, name: r.name, description: r.description || null, destination: r.destination, start_date: r.start_date, end_date: r.end_date,
+      min_size: Number(r.min_size), max_size: Number(r.max_size), price_per_person: r.price_per_person === '' ? (undefined as unknown as number) : Number(r.price_per_person),
+      currency: r.currency, auto_status: r.auto_status ? r.auto_status.toLowerCase() !== 'false' : true, owner_agent_id: agent?.id ?? null,
+    }
+    const errors = checkTour(input)
+    if (!agent) errors.splice(errors.findIndex((e) => e.field === 'owner_agent_id'), 1, { field: 'owner_agent_email', message: `No agent with email ${r.owner_agent_email ?? ''}` })
+    return { row: i + 2, input, errors }
+  })
+  const codes = parsed.map((p) => p.input.code)
+  parsed.forEach((p, i) => { if (p.input.code && codes.indexOf(p.input.code) !== i) p.errors.push({ field: 'code', message: 'Duplicate code in file' }) })
+  job.error_report = parsed.flatMap((p) => p.errors.map((e) => ({ row: p.row, ...e })))
+  if (job.error_report.length) return job
+  parsed.forEach(({ input }) => db().tours.push(newTour(input)))
+  return { ...job, status: 'succeeded', error_report: null }
+}, true))
+/* 報名：示範資料，依行程 id 產生，付款狀態依序輪替 */
+const PAY_CYCLE: PaymentStatus[] = ['paid', 'deposit', 'unpaid', 'paid']
+route(toursApi.bookings, handler((ctx) => {
+  const tour = tourOf(ctx.params.id)
+  return (BOOKING_SEED[tour.id] ?? []).map((name, i): TourBooking => {
+    const status = PAY_CYCLE[i % PAY_CYCLE.length]
+    const due = Number(tour.price_per_person)
+    return {
+      id: tour.id * 100 + i + 1, tour_id: tour.id, tour_code: tour.code, member_id: tour.id * 100 + i + 1, member_name: name, payment_status: status,
+      amount_due: due.toFixed(2), amount_paid: (status === 'paid' ? due : status === 'deposit' ? due * 0.3 : 0).toFixed(2), currency: tour.currency,
+      booked_at: tour.created_at, cancelled_at: null, notes: null,
+    }
+  })
+}))
+
+/* ── 行程表：與真正後端相同（日期須在行程期間內；同一天的順序不可重複，未指定 = 當天最大 + 1；
+      可直接帶 itinerary_item 同時新增旅遊地點；匯入 CSV 全部正確才寫入） ── */
+const ITINERARY_COLUMNS = ['itinerary_item_id', 'name', 'address', 'city', 'country', 'meeting_point', 'visit_date', 'start_time', 'end_time', 'sequence', 'notes']
+type ItineraryRow = Omit<TourItinerary, 'name' | 'address' | 'city' | 'country' | 'meeting_point' | 'products'>
+const tstore = persisted('fake_tour_itineraries_v1', () => ({
+  rows: [
+    { id: 1, tour_id: 1, itinerary_item_id: 1, visit_date: '2026-06-30', start_time: '09:00:00', end_time: '11:30:00', sequence: 1, notes: '二年坂自由活動 40 分鐘' },
+    { id: 2, tour_id: 1, itinerary_item_id: 2, visit_date: '2026-06-30', start_time: '14:00:00', end_time: null, sequence: 2, notes: null },
+    { id: 3, tour_id: 1, itinerary_item_id: 3, visit_date: '2026-07-01', start_time: '10:00:00', end_time: null, sequence: 1, notes: null },
+  ] as ItineraryRow[],
+}))
+const tdb = () => tstore.get()
+const rowHandler = (fn: (ctx: Ctx) => unknown) => async (ctx: Ctx) => {
+  requireUser(ctx)
+  const out = await fn(ctx)
+  tstore.save()
+  istore.save()
+  return out
+}
+const nextRowId = () => Math.max(0, ...tdb().rows.map((r) => r.id)) + 1
+/* 回傳時帶上旅遊地點的名稱、地址與商品 */
+const withItem = (r: ItineraryRow): TourItinerary => {
+  const it = idb().items.find((x) => x.id === r.itinerary_item_id)
+  return { ...r, name: it?.name ?? '', address: it?.address ?? null, city: it?.city ?? null, country: it?.country ?? null, meeting_point: it?.meeting_point ?? null, products: it?.products ?? [] }
+}
+const rowOf = (id: string) => {
+  const row = tdb().rows.find((r) => String(r.id) === id)
+  if (!row) throw new FakeError(404, 'Tour itinerary not found')
+  return row
+}
+const hms = (t?: string | null) => (t && t.length === 5 ? t + ':00' : t ?? null)
+function checkRow(r: Partial<TourItineraryCreate>, tour: Tour, creating: boolean) {
+  const errors: { field: string; message: string }[] = []
+  if (creating || r.visit_date != null) {
+    if (!isDate(r.visit_date)) errors.push({ field: 'visit_date', message: 'Input should be a valid date' })
+    else if (r.visit_date! < tour.start_date || r.visit_date! > tour.end_date) errors.push({ field: 'visit_date', message: `visit_date must be within the tour dates (${tour.start_date} to ${tour.end_date})` })
+  }
+  for (const k of ['start_time', 'end_time'] as const) if (r[k] && !/^\d{2}:\d{2}(:\d{2})?$/.test(r[k]!)) errors.push({ field: k, message: 'Input should be a valid time' })
+  if (r.sequence != null && !(Number.isInteger(Number(r.sequence)) && Number(r.sequence) >= 1)) errors.push({ field: 'sequence', message: 'Input should be greater than or equal to 1' })
+  if (creating && r.itinerary_item_id == null && !r.itinerary_item) errors.push({ field: 'itinerary_item_id', message: 'Give itinerary_item_id or itinerary_item' })
+  if (r.itinerary_item_id != null && !idb().items.some((x) => x.id === Number(r.itinerary_item_id))) errors.push({ field: 'itinerary_item_id', message: 'Itinerary item not found' })
+  if (r.itinerary_item) errors.push(...checkItem(r.itinerary_item, true).map((e) => ({ ...e, field: `itinerary_item.${e.field}` })))
+  return errors
+}
+/* 同一行程同一天的順序不可重複（衝突回 409）；未指定 = 當天最大順序 + 1 */
+function placeRow(row: ItineraryRow, sequence?: number | null) {
+  const day = tdb().rows.filter((r) => r.tour_id === row.tour_id && r.visit_date === row.visit_date && r.id !== row.id)
+  const seq = sequence ?? (row.sequence || Math.max(0, ...day.map((r) => r.sequence)) + 1)
+  if (day.some((r) => r.sequence === seq)) throw new FakeError(409, `The tour already has entry ${seq} on ${row.visit_date}`)
+  row.sequence = seq
+}
+/* 新增一筆（itinerary_item 會先新增為旅遊地點） */
+function addRow(tour: Tour, input: TourItineraryCreate) {
+  const itemId = input.itinerary_item_id != null ? Number(input.itinerary_item_id) : (() => {
+    const item: ItineraryItem = { ...seedItem(nextItemId(), '', '', null, null), city: null, country: null, ...itemFields(input.itinerary_item!), products: [], created_at: new Date().toISOString() }
+    idb().items.push(item)
+    return item.id
+  })()
+  const row: ItineraryRow = {
+    id: nextRowId(), tour_id: tour.id, itinerary_item_id: itemId, visit_date: input.visit_date, start_time: hms(input.start_time), end_time: hms(input.end_time),
+    sequence: 0, notes: input.notes ?? null,
+  }
+  placeRow(row, input.sequence)
+  tdb().rows.push(row)
+  return row
+}
+
+route(tourItinerariesApi.list, rowHandler((ctx) => {
+  const tour = tourOf(ctx.params.tourId)
+  return tdb().rows.filter((r) => r.tour_id === tour.id).sort((a, b) => a.visit_date.localeCompare(b.visit_date) || a.sequence - b.sequence).map(withItem)
+}))
+route(tourItinerariesApi.create, rowHandler((ctx) => {
+  const tour = tourOf(ctx.params.tourId)
+  const input = json<TourItineraryCreate>(ctx)
+  failOn(checkRow(input, tour, true))
+  return withItem(addRow(tour, input))
+}))
+route(tourItinerariesApi.update, rowHandler((ctx) => {
+  const row = rowOf(ctx.params.id)
+  const changes = json<TourItineraryUpdate>(ctx)
+  failOn(checkRow(changes, tourOf(row.tour_id), false))
+  const next: ItineraryRow = { ...row }
+  if (changes.itinerary_item_id != null) next.itinerary_item_id = Number(changes.itinerary_item_id)
+  if (changes.visit_date != null) next.visit_date = changes.visit_date
+  for (const k of ['start_time', 'end_time'] as const) if (changes[k] !== undefined) next[k] = hms(changes[k])
+  if (changes.notes !== undefined) next.notes = changes.notes
+  placeRow(next, changes.sequence)
+  Object.assign(row, next)
+  return withItem(row)
+}))
+route(tourItinerariesApi.remove, rowHandler((ctx) => {
+  const row = rowOf(ctx.params.id)
+  tdb().rows = tdb().rows.filter((r) => r !== row)
+}))
+route(tourItinerariesApi.importTemplate, rowHandler((ctx) => {
+  tourOf(ctx.params.tourId)
+  return { filename: 'itinerary-template.csv', content: ITINERARY_COLUMNS.join(',') + '\n', type: 'text/csv;charset=utf-8' }
+}))
+route(tourItinerariesApi.importFile, rowHandler(async (ctx) => {
+  const tour = tourOf(ctx.params.tourId)
+  const file = files(ctx, 'file')[0]
+  if (!file) throw new FakeError(422, 'body.file: Field required')
+  const job: ImportJob = { id: ++pdb().jobs, status: 'failed', file_name: file.name, target_id: tour.id, error_report: [], created_at: new Date().toISOString() }
+  pstore.save()
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    job.error_report = [{ row: 1, message: '假後端只支援 CSV 匯入（Excel 請連接真正後端）' }]
+    return job
+  }
+  const [header = [], ...lines] = parseCsv((await file.text()).replace(/^﻿/, ''))
+  const cols = header.map((h) => h.trim())
+  const parsed = lines.map((cells, i) => {
+    const r = Object.fromEntries(cols.map((c, j) => [c, cells[j]?.trim() ?? '']))
+    const opt = (k: string) => r[k] || null
+    const input: TourItineraryCreate = {
+      ...(r.itinerary_item_id ? { itinerary_item_id: Number(r.itinerary_item_id) } : { itinerary_item: { name: r.name, address: opt('address'), city: opt('city'), country: opt('country'), meeting_point: opt('meeting_point') } }),
+      visit_date: r.visit_date, start_time: opt('start_time'), end_time: opt('end_time'), sequence: r.sequence ? Number(r.sequence) : null, notes: opt('notes'),
+    }
+    return { row: i + 2, input, errors: checkRow(input, tour, true) }
+  })
+  job.error_report = parsed.flatMap((p) => p.errors.map((e) => ({ row: p.row, ...e })))
+  if (job.error_report.length) return job
+  /* 順序衝突也算錯誤：先在副本上排好，全部成功才寫入（有指定順序的列先放） */
+  const saved = { rows: tdb().rows, items: idb().items }
+  tdb().rows = [...saved.rows]
+  idb().items = [...saved.items]
+  try {
+    [...parsed].sort((a, b) => Number(a.input.sequence == null) - Number(b.input.sequence == null)).forEach(({ input }) => addRow(tour, input))
+  } catch (e) {
+    tdb().rows = saved.rows
+    idb().items = saved.items
+    return { ...job, error_report: [{ row: 1, field: 'sequence', message: (e as Error).message }] }
+  }
+  return { ...job, status: 'succeeded', error_report: null }
+}))
 
 /* ── 月銷售額 ── */
 route(salesApi.list, handler(() => db().monthly))

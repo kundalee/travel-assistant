@@ -8,14 +8,15 @@ import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } f
 import { toast, type IconName } from '../../components'
 import {
   announcementsApi, bookingsApi, campaignsApi, crudOf, ordersApi, placesApi, productsApi, reportsApi, reviewsApi, salesApi, toursApi, trackingApi,
-  usersApi, shopsApi, shopProductsApi, itineraryItemsApi, type EditableKey, type Item, type ItemChanges, type NewItem,
+  usersApi, shopsApi, shopProductsApi, itineraryItemsApi, tourItinerariesApi, type EditableKey, type Item, type ItemChanges, type NewItem,
 } from '../../api/admin'
 import type {
-  AdminData, ItineraryItemCreate, ItineraryItemProductWrite, ItineraryItemUpdate, ProductFilters, ShopProductCreate, ShopProductUpdate,
+  AdminData, GuideAssignment, ItineraryItemCreate, ItineraryItemProductWrite, ItineraryItemUpdate, ProductFilters, ShopProductCreate, ShopProductUpdate,
+  TourItineraryCreate, TourItineraryUpdate, TourStatus,
 } from '../../api/types/admin'
 
 const LISTS = {
-  users: () => usersApi.list(), tours: () => toursApi.list(), orders: () => ordersApi.list(), bookings: () => bookingsApi.list(),
+  users: () => usersApi.list(), tours: () => toursApi.list({ limit: 500 }), orders: () => ordersApi.list(), bookings: () => bookingsApi.list(),
   reviews: () => reviewsApi.list(), announcements: () => announcementsApi.list(), campaigns: () => campaignsApi.list(),
   products: () => productsApi.list(), places: () => placesApi.list(), shops: () => shopsApi.list(), monthly: () => salesApi.list(),
 }
@@ -27,7 +28,8 @@ export const adminKeys = {
   tracking: ['admin', 'tracking'] as const,
   stats: ['admin', 'stats'] as const,
   receivables: ['admin', 'receivables'] as const,
-  roster: (tourId: string) => ['admin', 'roster', tourId] as const,
+  tourItineraries: (tourId: number) => ['admin', 'tour-itineraries', tourId] as const,
+  tourBookings: (tourId: number) => ['admin', 'tour-bookings', tourId] as const,
   shopProducts: (shopId: number) => ['admin', 'shop-products', shopId] as const,
   shopProductsAll: ['admin', 'shop-products'] as const,
   allProducts: (filters: object) => ['admin', 'products-all', filters] as const,
@@ -70,10 +72,6 @@ export function useAdminData<K extends DataKey>(...keys: K[]) {
     : undefined
   return { queries, data }
 }
-
-/** 團員名冊（含預設登入帳密） */
-export const useRoster = (tourId: string) =>
-  useQuery({ queryKey: adminKeys.roster(tourId), queryFn: () => toursApi.members({ id: tourId }) })
 
 type Id = string | number
 type Row = { id: Id }
@@ -208,4 +206,63 @@ export function useItineraryItemActions() {
       onSuccess: refresh,
     }),
   }
+}
+
+/* ── 行程：狀態 / 領隊 / 複製 / 匯入（新增 / 修改 / 刪除用 useCrud）；成功後重新讀取行程清單 ── */
+
+export function useTourActions() {
+  const qc = useQueryClient()
+  const refresh = () => qc.invalidateQueries({ queryKey: adminKeys.list('tours'), refetchType: 'all' })
+  return {
+    setStatus: useMutation({ mutationFn: (v: { id: number; status: TourStatus }) => toursApi.setStatus({ id: v.id }, { status: v.status }), onSuccess: refresh }),
+    setGuides: useMutation({ mutationFn: (v: { id: number; guides: GuideAssignment[] }) => toursApi.setGuides({ id: v.id }, { guides: v.guides }), onSuccess: refresh }),
+    duplicate: useMutation({
+      mutationFn: (v: { id: number; code: string; start_date: string; name?: string | null }) =>
+        toursApi.duplicate({ id: v.id }, { code: v.code, start_date: v.start_date, name: v.name }),
+      onSuccess: refresh,
+    }),
+    /* 匯入一定回 200：status = failed 時沒有寫入任何資料，由畫面顯示 error_report */
+    importFile: useMutation({ mutationFn: (file: File) => toursApi.importFile({ file }), onSuccess: (job) => (job.status !== 'failed' ? refresh() : undefined) }),
+  }
+}
+
+/** 行程的報名（團員、付款狀態） */
+export const useTourBookings = (tourId: number) =>
+  useQuery({ queryKey: adminKeys.tourBookings(tourId), queryFn: () => toursApi.bookings({ id: tourId }) })
+
+/** 行程表（依日期、順序） */
+export const useTourItineraries = (tourId: number) =>
+  useQuery({ queryKey: adminKeys.tourItineraries(tourId), queryFn: () => tourItinerariesApi.list({ tourId }) })
+
+/** 行程表的新增 / 修改 / 移除 / 匯入：成功後重新讀取行程表；新增時可能同時新增旅遊地點，一併重新讀取 */
+export function useTourItineraryActions(tourId: number) {
+  const qc = useQueryClient()
+  const refresh = () => Promise.all([
+    qc.invalidateQueries({ queryKey: adminKeys.tourItineraries(tourId), refetchType: 'all' }),
+    qc.invalidateQueries({ queryKey: adminKeys.itineraryItems }),
+  ])
+  return {
+    save: useMutation({
+      mutationFn: (v: { id?: number; body: TourItineraryCreate | TourItineraryUpdate }) => v.id
+        ? tourItinerariesApi.update({ id: v.id }, v.body)
+        : tourItinerariesApi.create({ tourId }, v.body as TourItineraryCreate),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: (id: number) => tourItinerariesApi.remove({ id }), onSuccess: refresh }),
+    importFile: useMutation({
+      mutationFn: (file: File) => tourItinerariesApi.importFile({ tourId }, { file }),
+      onSuccess: (job) => (job.status !== 'failed' ? refresh() : undefined),
+    }),
+  }
+}
+
+/** 下載行程 / 行程表匯入範本（CSV / Excel）並存檔 */
+export async function downloadTourTemplate(fileFormat: 'csv' | 'xlsx', tourId?: number) {
+  const { blob, filename } = tourId
+    ? await tourItinerariesApi.importTemplate({ tourId, file_format: fileFormat })
+    : await toursApi.importTemplate({ file_format: fileFormat })
+  const url = URL.createObjectURL(blob)
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+  a.click()
+  URL.revokeObjectURL(url)
 }

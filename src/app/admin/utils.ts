@@ -18,21 +18,14 @@ const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 
 /* 團編：行程名_YYYYMMDD-N團 */
-export const tourBatch = (t: Tour) => `${t.title}_${(t.start_date || '').replace(/-/g, '')}-${t.batch_seq || 1}團`
-
-/* 依日期自動推算狀態：結束隔日＝已完成；起始日＝進行中；未指派領隊＝準備中；其餘＝即將出發 */
-export function computeTourStatus(t: Tour): Tour['status'] {
-  const sd = toDate(t.start_date), ed = toDate(t.end_date), now = today0()
-  if (ed && now >= addDays(ed, 1)) return 'completed'
-  if (sd && now >= sd) return 'ongoing'
-  if (!t.guide_id) return 'preparing'
-  return 'upcoming'
-}
-
+/** 已取消，或結束 afterDays 天後 → 歸入歷史行程 */
 export function isHistoryTour(t: Tour, afterDays: number) {
   const ed = toDate(t.end_date)
-  return !!ed && today0() > addDays(ed, afterDays)
+  return t.status === 'cancelled' || (!!ed && today0() > addDays(ed, afterDays))
 }
+
+/** 主要領隊（未標記時取第一位） */
+export const leadGuide = (t: Tour) => t.guides.find((g) => g.is_lead) ?? t.guides[0]
 
 export const avatarUrl = (name?: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'U')}&background=EEF0FE&color=4338CA`
